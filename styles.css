@@ -1,16 +1,70 @@
-/* Journal View */
-.journal-view {
-	height: 100%;
-	overflow: hidden;
-}
+/*
+ * Daily Journal Plugin Styles
+ *
+ * The journal view extends MarkdownView. Today's note uses Obsidian's
+ * native Live Preview editor. Past notes are rendered below via MarkdownRenderer.
+ *
+ * The .view-content (contentEl) is made scrollable so the editor and past
+ * notes form a single scrollable area.
+ */
 
-.journal-container {
-	height: 100%;
+/* ── Layout: make the whole view scroll as one ── */
+.journal-view .view-content {
 	overflow-y: auto;
-	padding: 0 var(--size-4-4);
+	display: flex;
+	flex-direction: column;
 }
 
-/* Note Block */
+/* Editor section: auto-height so past notes appear below */
+.journal-view .markdown-source-view {
+	flex: 0 0 auto;
+	height: auto;
+	min-height: 100px;
+	overflow: visible;
+}
+
+.journal-view .cm-editor {
+	height: auto;
+}
+
+.journal-view .cm-scroller {
+	overflow: visible !important;
+}
+
+/* Reading view: same treatment */
+.journal-view .markdown-reading-view {
+	flex: 0 0 auto;
+	height: auto;
+	overflow: visible;
+}
+
+/* ── Today's date header ── */
+.journal-today-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--size-4-2) 0;
+	margin-bottom: 0;
+	max-width: var(--file-line-width);
+	margin-left: auto;
+	margin-right: auto;
+	width: 100%;
+	padding-left: var(--size-4-4);
+	padding-right: var(--size-4-4);
+}
+
+/* ── Past notes section ── */
+.journal-past-notes {
+	flex: 0 0 auto;
+	max-width: var(--file-line-width);
+	margin-left: auto;
+	margin-right: auto;
+	width: 100%;
+	padding: 0 var(--size-4-4);
+	padding-bottom: var(--size-4-8);
+}
+
+/* ── Note Block (past notes) ── */
 .journal-note-block {
 	margin-bottom: var(--size-4-6);
 	border-bottom: 1px solid var(--background-modifier-border);
@@ -21,7 +75,7 @@
 	border-bottom: none;
 }
 
-/* Date Header */
+/* ── Date Header ── */
 .journal-note-header {
 	display: flex;
 	align-items: center;
@@ -65,7 +119,12 @@
 	background: var(--background-modifier-hover);
 }
 
-/* Content Area */
+/* ── Header hiding ── */
+.journal-note-header-hidden {
+	display: none;
+}
+
+/* ── Content Area ── */
 .journal-note-content {
 	min-height: 2em;
 }
@@ -83,42 +142,18 @@
 	padding: var(--size-4-2);
 }
 
-/* Editor styling */
-.journal-note-editing .cm-editor {
-	background: transparent;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	padding: var(--size-4-2);
-}
-
-.journal-note-editing .cm-editor.cm-focused {
-	border-color: var(--interactive-accent);
-	box-shadow: 0 0 0 1px var(--interactive-accent);
-}
-
-.journal-note-editing .cm-scroller {
-	font-family: var(--font-text);
-	font-size: var(--font-text-size);
-	line-height: var(--line-height-normal);
-}
-
-/* Header hiding */
-.journal-note-header-hidden {
-	display: none;
-}
-
-/* H1 hiding */
+/* ── H1 hiding ── */
 .journal-note-block.hide-h1 .markdown-rendered h1:first-child {
 	display: none;
 }
 
-/* Sentinel (infinite scroll trigger) */
+/* ── Sentinel (infinite scroll trigger) ── */
 .journal-sentinel {
 	height: 1px;
 	visibility: hidden;
 }
 
-/* Empty state */
+/* ── Empty state ── */
 .journal-empty {
 	display: flex;
 	align-items: center;
