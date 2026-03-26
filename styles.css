@@ -1,8 +1,129 @@
-/*
+/* Journal View */
+.journal-view {
+	height: 100%;
+	overflow: hidden;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.journal-container {
+	height: 100%;
+	overflow-y: auto;
+	padding: 0 var(--size-4-4);
+}
 
-If your plugin does not need CSS, delete this file.
+/* Note Block */
+.journal-note-block {
+	margin-bottom: var(--size-4-6);
+	border-bottom: 1px solid var(--background-modifier-border);
+	padding-bottom: var(--size-4-6);
+}
 
-*/
+.journal-note-block:last-of-type {
+	border-bottom: none;
+}
+
+/* Date Header */
+.journal-note-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--size-4-2) 0;
+	margin-bottom: var(--size-4-2);
+	cursor: pointer;
+	border-radius: var(--radius-s);
+	user-select: none;
+}
+
+.journal-note-header:hover {
+	color: var(--text-accent);
+}
+
+.journal-note-date {
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.journal-note-header:hover .journal-note-date {
+	color: var(--text-accent);
+}
+
+.journal-note-open-btn {
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+	padding: var(--size-4-1) var(--size-4-2);
+	border-radius: var(--radius-s);
+	opacity: 0;
+	transition: opacity 100ms ease;
+}
+
+.journal-note-header:hover .journal-note-open-btn {
+	opacity: 1;
+}
+
+.journal-note-open-btn:hover {
+	color: var(--text-accent);
+	background: var(--background-modifier-hover);
+}
+
+/* Content Area */
+.journal-note-content {
+	min-height: 2em;
+}
+
+.journal-note-rendered {
+	cursor: text;
+}
+
+.journal-note-rendered:hover {
+	background: var(--background-modifier-hover);
+	border-radius: var(--radius-s);
+}
+
+.journal-note-rendered .markdown-rendered {
+	padding: var(--size-4-2);
+}
+
+/* Editor styling */
+.journal-note-editing .cm-editor {
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-2);
+}
+
+.journal-note-editing .cm-editor.cm-focused {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.journal-note-editing .cm-scroller {
+	font-family: var(--font-text);
+	font-size: var(--font-text-size);
+	line-height: var(--line-height-normal);
+}
+
+/* Header hiding */
+.journal-note-header-hidden {
+	display: none;
+}
+
+/* H1 hiding */
+.journal-note-block.hide-h1 .markdown-rendered h1:first-child {
+	display: none;
+}
+
+/* Sentinel (infinite scroll trigger) */
+.journal-sentinel {
+	height: 1px;
+	visibility: hidden;
+}
+
+/* Empty state */
+.journal-empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 200px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-medium);
+}
