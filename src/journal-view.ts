@@ -1,6 +1,13 @@
-import { ItemView, TAbstractFile, TFile, WorkspaceLeaf, moment } from "obsidian";
+import {
+	Component,
+	MarkdownRenderer,
+	MarkdownView,
+	TAbstractFile,
+	TFile,
+	WorkspaceLeaf,
+	moment,
+} from "obsidian";
 import { VIEW_TYPE_JOURNAL, JOURNAL_ICON } from "./constants";
-import { NoteBlock } from "./note-block";
 import {
 	createDailyNote,
 	findExistingDailyNotes,
@@ -11,12 +18,150 @@ import {
 } from "./daily-notes-utils";
 import type JournalPlugin from "./main";
 
-export class JournalView extends ItemView {
+/**
+ * A single rendered past note in the journal view.
+ * Manages its own DOM and MarkdownRenderer lifecycle.
+ */
+class PastNoteBlock extends Component {
+	private containerEl: HTMLElement;
+	private contentEl: HTMLElement;
+	private app: MarkdownView["app"];
+	private file: TFile;
+	private date: ReturnType<typeof moment>;
+	private settings: JournalPlugin["settings"];
+	private onOpenFile: (file: TFile) => void;
+
+	constructor(
+		app: MarkdownView["app"],
+		file: TFile,
+		date: ReturnType<typeof moment>,
+		parentEl: HTMLElement,
+		settings: JournalPlugin["settings"],
+		onOpenFile: (file: TFile) => void,
+	) {
+		super();
+		this.app = app;
+		this.file = file;
+		this.date = date;
+		this.settings = settings;
+		this.onOpenFile = onOpenFile;
+
+		this.containerEl = parentEl.createDiv({ cls: "journal-note-block" });
+		if (this.settings.hideH1) {
+			this.containerEl.addClass("hide-h1");
+		}
+
+		// Date header
+		const headerEl = this.containerEl.createDiv({ cls: "journal-note-header" });
+		if (this.settings.hideFilename) {
+			headerEl.addClass("journal-note-header-hidden");
+		}
+
+		const dateLabel = this.date.calendar(null, {
+			sameDay: "[Today] — dddd, MMMM D, YYYY",
+			lastDay: "[Yesterday] — dddd, MMMM D, YYYY",
+			lastWeek: "dddd, MMMM D, YYYY",
+			sameElse: "dddd, MMMM D, YYYY",
+		});
+
+		headerEl.createEl("span", {
+			text: dateLabel,
+			cls: "journal-note-date",
+		});
+
+		const openBtn = headerEl.createEl("span", {
+			cls: "journal-note-open-btn",
+			attr: { "aria-label": "Open in new tab" },
+		});
+		openBtn.textContent = "↗";
+		openBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.onOpenFile(this.file);
+		});
+
+		headerEl.addEventListener("click", () => {
+			this.onOpenFile(this.file);
+		});
+
+		// Content area
+		this.contentEl = this.containerEl.createDiv({
+			cls: "journal-note-content journal-note-rendered",
+		});
+
+		// Click content to open in new tab
+		this.contentEl.addEventListener("click", (e) => {
+			// Don't intercept clicks on links, checkboxes, etc.
+			const target = e.target as HTMLElement;
+			if (target.closest("a, input, button, .internal-link, .external-link")) {
+				return;
+			}
+			this.onOpenFile(this.file);
+		});
+
+		void this.renderContent();
+	}
+
+	private async renderContent(): Promise<void> {
+		this.contentEl.empty();
+
+		let content = await this.app.vault.read(this.file);
+
+		if (this.settings.hideH1) {
+			content = this.stripFirstH1(content);
+		}
+
+		const renderContainer = this.contentEl.createDiv({ cls: "markdown-rendered" });
+		await MarkdownRenderer.render(
+			this.app,
+			content,
+			renderContainer,
+			this.file.path,
+			this,
+		);
+	}
+
+	private stripFirstH1(content: string): string {
+		const lines = content.split("\n");
+		for (let i = 0; i < lines.length; i++) {
+			const trimmed = lines[i]!.trim();
+			if (trimmed === "") continue;
+			if (trimmed.startsWith("# ")) {
+				lines.splice(i, 1);
+				break;
+			}
+			break;
+		}
+		return lines.join("\n");
+	}
+
+	async refresh(): Promise<void> {
+		await this.renderContent();
+	}
+
+	getFile(): TFile {
+		return this.file;
+	}
+
+	getContainerEl(): HTMLElement {
+		return this.containerEl;
+	}
+
+	onunload(): void {
+		this.containerEl.remove();
+	}
+}
+
+/**
+ * The main journal view. Extends MarkdownView so today's note gets
+ * Obsidian's native Live Preview editor. Past notes are rendered
+ * below the editor using MarkdownRenderer.
+ */
+export class JournalView extends MarkdownView {
 	private plugin: JournalPlugin;
-	private noteBlocks: NoteBlock[] = [];
-	private allEntries: DailyNoteEntry[] = [];
-	private loadedCount = 0;
-	private scrollContainer: HTMLElement | null = null;
+	private pastNotesContainer: HTMLElement | null = null;
+	private pastNoteBlocks: PastNoteBlock[] = [];
+	private pastEntries: DailyNoteEntry[] = [];
+	private loadedPastCount = 0;
 	private sentinelEl: HTMLElement | null = null;
 	private observer: IntersectionObserver | null = null;
 	private config: DailyNotesConfig | null = null;
@@ -39,59 +184,99 @@ export class JournalView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		const { contentEl } = this;
-		contentEl.empty();
-		contentEl.addClass("journal-view");
+		await super.onOpen();
+		this.containerEl.addClass("journal-view");
 
 		this.config = getDailyNotesConfig(this.app, this.plugin.settings);
 
-		// Auto-create today's note if enabled
+		// Auto-create today's note
 		if (this.plugin.settings.autoCreateToday) {
 			const todayPath = getDailyNotePath(moment(), this.config);
-			const existing = this.app.vault.getAbstractFileByPath(todayPath);
-			if (!existing) {
+			if (!this.app.vault.getAbstractFileByPath(todayPath)) {
 				await createDailyNote(this.app, moment(), this.config);
 			}
 		}
 
-		// Create scrollable container
-		this.scrollContainer = contentEl.createDiv({ cls: "journal-container" });
-
-		// Load daily notes
-		await this.loadNotes();
-
-		// Set up infinite scroll
-		this.setupInfiniteScroll();
-
-		// Watch for file changes
-		this.registerEvent(
-			this.app.vault.on("modify", (file) => this.onFileModified(file))
-		);
-		this.registerEvent(
-			this.app.vault.on("create", (file) => this.onFileCreated(file))
-		);
-		this.registerEvent(
-			this.app.vault.on("delete", (file) => this.onFileDeleted(file))
-		);
-		this.registerEvent(
-			this.app.vault.on("rename", (file, oldPath) => this.onFileRenamed(file, oldPath))
-		);
+		// Load today's note into the editor
+		const todayPath = getDailyNotePath(moment(), this.config);
+		const todayFile = this.app.vault.getAbstractFileByPath(todayPath);
+		if (todayFile instanceof TFile) {
+			await this.leaf.openFile(todayFile, { state: { mode: "source" } });
+		}
 	}
 
-	private async loadNotes(): Promise<void> {
-		if (!this.config) return;
+	async onLoadFile(file: TFile): Promise<void> {
+		await super.onLoadFile(file);
+		this.buildPastNotesSection();
+		this.registerVaultEvents();
+	}
 
-		this.allEntries = findExistingDailyNotes(this.app, this.config);
-		this.loadedCount = 0;
-		this.clearNoteBlocks();
-		await this.loadNextBatch();
+	async onUnloadFile(file: TFile): Promise<void> {
+		this.cleanupPastNotes();
+		await super.onUnloadFile(file);
+	}
+
+	private buildPastNotesSection(): void {
+		this.cleanupPastNotes();
+
+		if (!this.config) {
+			this.config = getDailyNotesConfig(this.app, this.plugin.settings);
+		}
+
+		// Create the past notes container inside the view-content area
+		this.pastNotesContainer = this.contentEl.createDiv({
+			cls: "journal-past-notes",
+		});
+
+		// Add a date header for today's note above the editor
+		this.addTodayHeader();
+
+		// Find all daily notes except today
+		const allEntries = findExistingDailyNotes(this.app, this.config);
+		this.pastEntries = allEntries.filter(
+			(e) => !e.date.isSame(moment(), "day"),
+		);
+
+		this.loadedPastCount = 0;
+		void this.loadNextBatch();
+		this.setupInfiniteScroll();
+	}
+
+	private addTodayHeader(): void {
+		// Insert a date header before the editor
+		const existingHeader = this.contentEl.querySelector(".journal-today-header");
+		if (existingHeader) existingHeader.remove();
+
+		const headerEl = document.createElement("div");
+		headerEl.className = "journal-today-header journal-note-header";
+		if (this.plugin.settings.hideFilename) {
+			headerEl.addClass("journal-note-header-hidden");
+		}
+
+		const dateLabel = moment().calendar(null, {
+			sameDay: "[Today] — dddd, MMMM D, YYYY",
+			lastDay: "[Yesterday] — dddd, MMMM D, YYYY",
+			lastWeek: "dddd, MMMM D, YYYY",
+			sameElse: "dddd, MMMM D, YYYY",
+		});
+
+		headerEl.createEl("span", {
+			text: dateLabel,
+			cls: "journal-note-date",
+		});
+
+		// Insert before the first child of contentEl (before the editor)
+		this.contentEl.insertBefore(headerEl, this.contentEl.firstChild);
 	}
 
 	private async loadNextBatch(): Promise<void> {
-		if (!this.scrollContainer || !this.config) return;
+		if (!this.pastNotesContainer) return;
 
 		const batchSize = this.plugin.settings.notesPerBatch;
-		const end = Math.min(this.loadedCount + batchSize, this.allEntries.length);
+		const end = Math.min(
+			this.loadedPastCount + batchSize,
+			this.pastEntries.length,
+		);
 
 		// Remove sentinel before adding new notes
 		if (this.sentinelEl) {
@@ -99,30 +284,28 @@ export class JournalView extends ItemView {
 			this.sentinelEl = null;
 		}
 
-		for (let i = this.loadedCount; i < end; i++) {
-			const entry = this.allEntries[i]!;
-			const isToday = entry.date.isSame(moment(), "day");
+		for (let i = this.loadedPastCount; i < end; i++) {
+			const entry = this.pastEntries[i]!;
 
-			const block = new NoteBlock(
+			const block = new PastNoteBlock(
 				this.app,
 				entry.file,
 				entry.date,
-				this.scrollContainer,
+				this.pastNotesContainer,
 				this.plugin.settings,
-				this.config,
-				isToday, // Today's note starts in edit mode
 				(file) => this.openInNewTab(file),
 			);
-			this.addChild(block);
-			this.noteBlocks.push(block);
+			block.load();
+			this.pastNoteBlocks.push(block);
 		}
 
-		this.loadedCount = end;
+		this.loadedPastCount = end;
 
 		// Re-add sentinel if there are more notes to load
-		if (this.loadedCount < this.allEntries.length) {
-			this.sentinelEl = this.scrollContainer.createDiv({ cls: "journal-sentinel" });
-			// Re-observe the new sentinel
+		if (this.loadedPastCount < this.pastEntries.length) {
+			this.sentinelEl = this.pastNotesContainer.createDiv({
+				cls: "journal-sentinel",
+			});
 			if (this.observer) {
 				this.observer.observe(this.sentinelEl);
 			}
@@ -130,20 +313,22 @@ export class JournalView extends ItemView {
 	}
 
 	private setupInfiniteScroll(): void {
-		if (!this.scrollContainer) return;
-
+		// The scroll container is .view-content (this.contentEl)
 		this.observer = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
-					if (entry.isIntersecting && this.loadedCount < this.allEntries.length) {
+					if (
+						entry.isIntersecting &&
+						this.loadedPastCount < this.pastEntries.length
+					) {
 						void this.loadNextBatch();
 					}
 				}
 			},
 			{
-				root: this.scrollContainer,
+				root: this.contentEl,
 				rootMargin: "200px",
-			}
+			},
 		);
 
 		if (this.sentinelEl) {
@@ -151,19 +336,19 @@ export class JournalView extends ItemView {
 		}
 	}
 
-	private clearNoteBlocks(): void {
-		for (const block of this.noteBlocks) {
-			this.removeChild(block);
-		}
-		this.noteBlocks = [];
-		if (this.scrollContainer) {
-			this.scrollContainer.empty();
-		}
-	}
-
-	private openInNewTab(file: TFile): void {
-		const leaf = this.app.workspace.getLeaf("tab");
-		void leaf.openFile(file);
+	private registerVaultEvents(): void {
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => this.onFileModified(file)),
+		);
+		this.registerEvent(
+			this.app.vault.on("create", (file) => this.onFileCreated(file)),
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => this.onFileDeleted(file)),
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", () => this.onFileRenamed()),
+		);
 	}
 
 	private isRelevantFile(file: TAbstractFile): boolean {
@@ -178,9 +363,13 @@ export class JournalView extends ItemView {
 
 	private onFileModified(file: TAbstractFile): void {
 		if (!this.isRelevantFile(file)) return;
-		const block = this.noteBlocks.find(b => b.getFile().path === file.path);
+		// Today's note is handled by the MarkdownView editor automatically.
+		// Only refresh past notes.
+		const block = this.pastNoteBlocks.find(
+			(b) => b.getFile().path === file.path,
+		);
 		if (block) {
-			void block.refreshContent();
+			void block.refresh();
 		}
 	}
 
@@ -188,38 +377,60 @@ export class JournalView extends ItemView {
 		if (!this.isRelevantFile(file) || !this.config) return;
 		if (!(file instanceof TFile)) return;
 
-		// Check if this file matches the daily note format
 		const date = moment(file.basename, this.config.format, true);
 		if (!date.isValid()) return;
 
-		// Reload all notes to maintain sort order
-		void this.loadNotes();
+		// Rebuild past notes to maintain sort order
+		this.buildPastNotesSection();
 	}
 
 	private onFileDeleted(file: TAbstractFile): void {
 		if (!(file instanceof TFile)) return;
-		const blockIndex = this.noteBlocks.findIndex(b => b.getFile().path === file.path);
+		const blockIndex = this.pastNoteBlocks.findIndex(
+			(b) => b.getFile().path === file.path,
+		);
 		if (blockIndex !== -1) {
-			const block = this.noteBlocks[blockIndex]!;
-			this.removeChild(block);
-			this.noteBlocks.splice(blockIndex, 1);
-			// Also remove from allEntries
-			this.allEntries = this.allEntries.filter(e => e.file.path !== file.path);
-			this.loadedCount = Math.max(0, this.loadedCount - 1);
+			const block = this.pastNoteBlocks[blockIndex]!;
+			block.unload();
+			this.pastNoteBlocks.splice(blockIndex, 1);
+			this.pastEntries = this.pastEntries.filter(
+				(e) => e.file.path !== file.path,
+			);
+			this.loadedPastCount = Math.max(0, this.loadedPastCount - 1);
 		}
 	}
 
-	private onFileRenamed(file: TAbstractFile, _oldPath: string): void {
-		if (!this.isRelevantFile(file)) return;
-		// Easiest to just reload
-		void this.loadNotes();
+	private onFileRenamed(): void {
+		// Rebuild to handle renamed files
+		if (this.config) {
+			this.buildPastNotesSection();
+		}
 	}
 
-	async onClose(): Promise<void> {
+	private openInNewTab(file: TFile): void {
+		const leaf = this.app.workspace.getLeaf("tab");
+		void leaf.openFile(file);
+	}
+
+	private cleanupPastNotes(): void {
 		if (this.observer) {
 			this.observer.disconnect();
 			this.observer = null;
 		}
-		this.clearNoteBlocks();
+		for (const block of this.pastNoteBlocks) {
+			block.unload();
+		}
+		this.pastNoteBlocks = [];
+		this.loadedPastCount = 0;
+		if (this.pastNotesContainer) {
+			this.pastNotesContainer.remove();
+			this.pastNotesContainer = null;
+		}
+		this.sentinelEl = null;
+	}
+
+	async onClose(): Promise<void> {
+		this.cleanupPastNotes();
+		await super.onClose();
 	}
 }
