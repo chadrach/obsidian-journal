@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "daily-journal",
+	"name": "Daily Journal",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "A Logseq-style scrollable journal view that stitches daily notes together in reverse chronological order with inline editing.",
+	"author": "",
+	"authorUrl": "",
 	"isDesktopOnly": false
 }
