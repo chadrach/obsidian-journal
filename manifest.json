@@ -1,7 +1,7 @@
 {
 	"id": "daily-journal",
 	"name": "Daily Journal",
-	"version": "1.0.0",
+	"version": "0.0.1",
 	"minAppVersion": "0.15.0",
 	"description": "A Logseq-style scrollable journal view that stitches daily notes together in reverse chronological order with inline editing.",
 	"author": "",
