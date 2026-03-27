@@ -1,74 +1,34 @@
 /*
  * Daily Journal Plugin Styles
  *
- * The journal view extends MarkdownView. Today's note uses Obsidian's
- * native Live Preview editor. Past notes are rendered below via MarkdownRenderer.
- *
- * The .view-content (contentEl) is made scrollable so the editor and past
- * notes form a single scrollable area.
+ * The journal view is an ItemView containing multiple embedded editors,
+ * each backed by a real Obsidian MarkdownView via a detached WorkspaceSplit.
+ * Every note is editable inline with Live Preview.
  */
 
-/* ── Layout: make the whole view scroll as one ── */
-.journal-view .view-content {
-	overflow-y: auto;
+/* ── Layout: scrollable journal container ── */
+.journal-view {
+	overflow: hidden;
 	display: flex;
 	flex-direction: column;
+	height: 100%;
 }
 
-/* Editor section: auto-height so past notes appear below */
-.journal-view .markdown-source-view {
-	flex: 0 0 auto;
-	height: auto;
-	min-height: 100px;
-	overflow: visible;
-}
-
-.journal-view .cm-editor {
-	height: auto;
-}
-
-.journal-view .cm-scroller {
-	overflow: visible !important;
-}
-
-/* Reading view: same treatment */
-.journal-view .markdown-reading-view {
-	flex: 0 0 auto;
-	height: auto;
-	overflow: visible;
-}
-
-/* ── Today's date header ── */
-.journal-today-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: var(--size-4-2) 0;
-	margin-bottom: 0;
-	max-width: var(--file-line-width);
-	margin-left: auto;
-	margin-right: auto;
-	width: 100%;
-	padding-left: var(--size-4-4);
-	padding-right: var(--size-4-4);
-}
-
-/* ── Past notes section ── */
-.journal-past-notes {
-	flex: 0 0 auto;
-	max-width: var(--file-line-width);
-	margin-left: auto;
-	margin-right: auto;
-	width: 100%;
+.journal-container {
+	overflow-y: auto;
+	flex: 1 1 auto;
 	padding: 0 var(--size-4-4);
 	padding-bottom: var(--size-4-8);
 }
 
-/* ── Note Block (past notes) ── */
+/* ── Note Block ── */
 .journal-note-block {
-	margin-bottom: var(--size-4-6);
+	max-width: var(--file-line-width);
+	margin-left: auto;
+	margin-right: auto;
+	margin-bottom: var(--size-4-4);
 	border-bottom: 1px solid var(--background-modifier-border);
-	padding-bottom: var(--size-4-6);
+	padding-bottom: var(--size-4-4);
 }
 
 .journal-note-block:last-of-type {
@@ -81,7 +41,7 @@
 	align-items: center;
 	justify-content: space-between;
 	padding: var(--size-4-2) 0;
-	margin-bottom: var(--size-4-2);
+	margin-bottom: var(--size-4-1);
 	cursor: pointer;
 	border-radius: var(--radius-s);
 	user-select: none;
@@ -124,27 +84,63 @@
 	display: none;
 }
 
-/* ── Content Area ── */
-.journal-note-content {
+/* Generic hide utility */
+.journal-hidden {
+	display: none !important;
+}
+
+/* ── Embedded Editor ── */
+.journal-note-editor {
+	min-height: var(--journal-cached-height, 3em);
+}
+
+/* The embedded split creates a full workspace-leaf inside our container.
+   Remove default leaf styling so it blends seamlessly. */
+.journal-note-editor .workspace-split {
+	height: auto;
+}
+
+.journal-note-editor .workspace-leaf {
+	height: auto;
+}
+
+.journal-note-editor .workspace-leaf-content {
+	height: auto;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Let the CM editor grow to fit its content instead of being fixed-height */
+.journal-note-editor .markdown-source-view {
+	flex: 0 0 auto;
+	height: auto;
 	min-height: 2em;
+	overflow: visible;
 }
 
-.journal-note-rendered {
-	cursor: text;
+.journal-note-editor .cm-editor {
+	height: auto;
 }
 
-.journal-note-rendered:hover {
-	background: var(--background-modifier-hover);
-	border-radius: var(--radius-s);
+.journal-note-editor .cm-scroller {
+	overflow: visible !important;
 }
 
-.journal-note-rendered .markdown-rendered {
-	padding: var(--size-4-2);
+/* Reading view: same treatment */
+.journal-note-editor .markdown-reading-view {
+	flex: 0 0 auto;
+	height: auto;
+	overflow: visible;
 }
 
-/* ── H1 hiding ── */
-.journal-note-block.hide-h1 .markdown-rendered h1:first-child {
+/* Remove tab-bar-like chrome from the embedded leaf */
+.journal-note-editor .workspace-tab-header-container {
 	display: none;
+}
+
+/* ── H1 / inline-title hiding ── */
+.journal-note-editor .inline-title {
+	/* Controlled via JS based on settings.hideH1 */
 }
 
 /* ── Sentinel (infinite scroll trigger) ── */
