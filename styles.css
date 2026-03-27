@@ -96,44 +96,35 @@
 }
 
 /*
- * Obsidian's workspace CSS uses position:absolute, inset:0, and flex:1 1 0
- * for splits, leaves, and view-content. Inside our flow-layout scroll
- * container these cause zero-height collapse. Override everything to
- * position:relative + height:auto + flex:none so content sizes naturally.
+ * These classes are added via JS to every workspace element inside our
+ * embedded editors. They use the class directly on the element, so
+ * specificity is guaranteed. Obsidian's CSS uses position:absolute,
+ * inset:0, flex:1 1 0 — all of which collapse to zero height inside
+ * our flow-layout scroll container.
  */
-.journal-note-editor .workspace-split,
-.journal-note-editor .workspace-leaf,
-.journal-note-editor .workspace-leaf-content,
-.journal-note-editor .view-content,
-.journal-note-editor .markdown-source-view,
-.journal-note-editor .markdown-reading-view,
-.journal-note-editor .markdown-preview-view {
+.journal-flow-layout {
 	position: relative !important;
-	height: auto !important;
-	width: 100% !important;
+	top: unset !important;
+	left: unset !important;
+	right: unset !important;
+	bottom: unset !important;
 	inset: unset !important;
-	display: flex !important;
-	flex-direction: column !important;
-	flex: none !important;
-	overflow: visible !important;
-}
-
-/* CodeMirror editor: auto-height to fit content */
-.journal-note-editor .cm-editor {
 	height: auto !important;
+	max-height: none !important;
+	min-height: 0 !important;
+	width: 100% !important;
+	display: block !important;
 	flex: none !important;
+	overflow: visible !important;
 }
 
-.journal-note-editor .cm-scroller {
+.journal-flow-scroller {
 	overflow: visible !important;
+	height: auto !important;
 }
 
 .journal-note-editor .cm-content {
 	min-height: 1em;
-}
-
-.journal-note-editor .cm-sizer {
-	min-height: 0 !important;
 }
 
 /* Remove tab-bar-like chrome from the embedded leaf */

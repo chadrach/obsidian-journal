@@ -133,6 +133,11 @@ class EmbeddedNoteEditor extends Component {
 				state: { mode: "source" },
 			});
 
+			// Force flow-layout on all workspace elements via inline styles.
+			// Obsidian's CSS uses high-specificity selectors or JS-set styles
+			// that beat our stylesheet !important overrides.
+			this.forceFlowLayout(this.split.containerEl);
+
 			// Strip view header (title bar) — we have our own date header
 			const viewHeader = this.split.containerEl.querySelector(".view-header");
 			if (viewHeader instanceof HTMLElement) {
@@ -145,15 +150,23 @@ class EmbeddedNoteEditor extends Component {
 				inlineTitle.addClass("journal-hidden");
 			}
 
-			// Debug: log DOM structure so we can diagnose visibility issues
+			// Debug: log computed styles + full DOM
+			const cs = getComputedStyle(this.split.containerEl);
 			// eslint-disable-next-line no-console
 			console.log(
 				"Journal: mounted editor for", this.file.path,
-				"\n  split.containerEl classes:", this.split.containerEl.className,
+				"\n  split.containerEl computed:", {
+					display: cs.display,
+					position: cs.position,
+					height: cs.height,
+					overflow: cs.overflow,
+					flex: cs.flex,
+					inset: cs.inset,
+				},
 				"\n  split.containerEl size:", this.split.containerEl.offsetWidth, "x", this.split.containerEl.offsetHeight,
 				"\n  editorEl size:", this.editorEl.offsetWidth, "x", this.editorEl.offsetHeight,
 				"\n  leaf view type:", this.leaf.view?.getViewType(),
-				"\n  DOM tree:", this.editorEl.innerHTML.slice(0, 500),
+				"\n  full DOM:", this.editorEl.innerHTML.slice(0, 1500),
 			);
 		} catch (e) {
 			console.error("Journal: failed to mount editor for", this.file.path, e);
@@ -189,6 +202,40 @@ class EmbeddedNoteEditor extends Component {
 		}
 
 		this.mounted = false;
+	}
+
+	/**
+	 * Force all workspace elements inside the embedded editor to use
+	 * flow layout instead of Obsidian's default absolute positioning.
+	 */
+	private forceFlowLayout(root: HTMLElement): void {
+		const selectors = [
+			".workspace-split",
+			".workspace-leaf",
+			".workspace-leaf-content",
+			".view-content",
+			".markdown-source-view",
+			".cm-editor",
+		];
+
+		// Also apply to root itself (it IS the workspace-split)
+		const targets = [root];
+		for (const sel of selectors) {
+			const found = root.querySelectorAll(sel);
+			found.forEach((el) => {
+				if (el instanceof HTMLElement) targets.push(el);
+			});
+		}
+
+		for (const el of targets) {
+			el.addClass("journal-flow-layout");
+		}
+
+		// CM scroller needs special treatment
+		const scroller = root.querySelector(".cm-scroller");
+		if (scroller instanceof HTMLElement) {
+			scroller.addClass("journal-flow-scroller");
+		}
 	}
 
 	isMounted(): boolean {
