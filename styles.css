@@ -92,50 +92,66 @@
 /* ── Embedded Editor ── */
 .journal-note-editor {
 	min-height: var(--journal-cached-height, 3em);
+	position: relative;
 }
 
-/* The embedded split creates a full workspace-leaf inside our container.
-   Remove default leaf styling so it blends seamlessly. */
-.journal-note-editor .workspace-split {
-	height: auto;
-}
-
-.journal-note-editor .workspace-leaf {
-	height: auto;
-}
-
-.journal-note-editor .workspace-leaf-content {
-	height: auto;
+/*
+ * Obsidian's workspace CSS uses position:absolute + inset:0 for splits,
+ * leaves, and view-content. We must override ALL of these to flow-layout
+ * so the editors size to their content inside our scroll container.
+ */
+.journal-note-editor .workspace-split,
+.journal-note-editor .workspace-leaf,
+.journal-note-editor .workspace-leaf-content,
+.journal-note-editor .view-content {
+	position: relative !important;
+	height: auto !important;
+	width: 100% !important;
+	inset: unset !important;
 	display: flex;
 	flex-direction: column;
 }
 
 /* Let the CM editor grow to fit its content instead of being fixed-height */
 .journal-note-editor .markdown-source-view {
-	flex: 0 0 auto;
-	height: auto;
+	flex: 0 0 auto !important;
+	height: auto !important;
 	min-height: 2em;
-	overflow: visible;
+	overflow: visible !important;
 }
 
 .journal-note-editor .cm-editor {
-	height: auto;
+	height: auto !important;
 }
 
 .journal-note-editor .cm-scroller {
 	overflow: visible !important;
 }
 
+.journal-note-editor .cm-content {
+	min-height: 1em;
+}
+
 /* Reading view: same treatment */
 .journal-note-editor .markdown-reading-view {
-	flex: 0 0 auto;
-	height: auto;
-	overflow: visible;
+	flex: 0 0 auto !important;
+	height: auto !important;
+	overflow: visible !important;
+}
+
+.journal-note-editor .markdown-preview-view {
+	height: auto !important;
+	overflow: visible !important;
 }
 
 /* Remove tab-bar-like chrome from the embedded leaf */
 .journal-note-editor .workspace-tab-header-container {
-	display: none;
+	display: none !important;
+}
+
+/* Remove the view-actions bar (close/more buttons) from embedded leaves */
+.journal-note-editor .view-actions {
+	display: none !important;
 }
 
 /* ── H1 / inline-title hiding ── */
