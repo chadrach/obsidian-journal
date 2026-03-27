@@ -96,32 +96,32 @@
 }
 
 /*
- * Obsidian's workspace CSS uses position:absolute + inset:0 for splits,
- * leaves, and view-content. We must override ALL of these to flow-layout
- * so the editors size to their content inside our scroll container.
+ * Obsidian's workspace CSS uses position:absolute, inset:0, and flex:1 1 0
+ * for splits, leaves, and view-content. Inside our flow-layout scroll
+ * container these cause zero-height collapse. Override everything to
+ * position:relative + height:auto + flex:none so content sizes naturally.
  */
 .journal-note-editor .workspace-split,
 .journal-note-editor .workspace-leaf,
 .journal-note-editor .workspace-leaf-content,
-.journal-note-editor .view-content {
+.journal-note-editor .view-content,
+.journal-note-editor .markdown-source-view,
+.journal-note-editor .markdown-reading-view,
+.journal-note-editor .markdown-preview-view {
 	position: relative !important;
 	height: auto !important;
 	width: 100% !important;
 	inset: unset !important;
-	display: flex;
-	flex-direction: column;
-}
-
-/* Let the CM editor grow to fit its content instead of being fixed-height */
-.journal-note-editor .markdown-source-view {
-	flex: 0 0 auto !important;
-	height: auto !important;
-	min-height: 2em;
+	display: flex !important;
+	flex-direction: column !important;
+	flex: none !important;
 	overflow: visible !important;
 }
 
+/* CodeMirror editor: auto-height to fit content */
 .journal-note-editor .cm-editor {
 	height: auto !important;
+	flex: none !important;
 }
 
 .journal-note-editor .cm-scroller {
@@ -132,16 +132,8 @@
 	min-height: 1em;
 }
 
-/* Reading view: same treatment */
-.journal-note-editor .markdown-reading-view {
-	flex: 0 0 auto !important;
-	height: auto !important;
-	overflow: visible !important;
-}
-
-.journal-note-editor .markdown-preview-view {
-	height: auto !important;
-	overflow: visible !important;
+.journal-note-editor .cm-sizer {
+	min-height: 0 !important;
 }
 
 /* Remove tab-bar-like chrome from the embedded leaf */
@@ -151,6 +143,11 @@
 
 /* Remove the view-actions bar (close/more buttons) from embedded leaves */
 .journal-note-editor .view-actions {
+	display: none !important;
+}
+
+/* Hide the resize handles between embedded leaves */
+.journal-note-editor .workspace-leaf-resize-handle {
 	display: none !important;
 }
 
