@@ -109,39 +109,44 @@ class EmbeddedNoteEditor extends Component {
 		if (this.mounted) return;
 		this.mounted = true;
 
-		const workspace = this.plugin.app.workspace;
+		try {
+			const workspace = this.plugin.app.workspace;
 
-		// Create a detached WorkspaceSplit
-		this.split = new (WorkspaceSplit as unknown as ConstructableWorkspaceSplit)(
-			workspace,
-			"vertical",
-		);
+			// Create a detached WorkspaceSplit
+			this.split = new (WorkspaceSplit as unknown as ConstructableWorkspaceSplit)(
+				workspace,
+				"vertical",
+			);
 
-		// Override getRoot so Obsidian's layout engine can resolve the split
-		this.split.getRoot = () =>
-			workspace.rootSplit as unknown as ReturnType<WorkspaceSplit["getRoot"]>;
+			// Override getRoot so Obsidian's layout engine can resolve the split
+			this.split.getRoot = () =>
+				workspace.rootSplit as unknown as ReturnType<WorkspaceSplit["getRoot"]>;
 
-		// Insert the split's container element into our DOM
-		this.editorEl.appendChild(this.split.containerEl);
+			// Insert the split's container element into our DOM
+			this.editorEl.appendChild(this.split.containerEl);
 
-		// Create a real leaf inside the split
-		this.leaf = workspace.createLeafInParent(this.split, 0);
+			// Create a real leaf inside the split
+			this.leaf = workspace.createLeafInParent(this.split, 0);
 
-		// Open the file as a markdown view in source/live-preview mode
-		await this.leaf.openFile(this.file, {
-			state: { mode: "source" },
-		});
+			// Open the file as a markdown view in source/live-preview mode
+			await this.leaf.openFile(this.file, {
+				state: { mode: "source" },
+			});
 
-		// Strip view header (title bar) — we have our own date header
-		const viewHeader = this.split.containerEl.querySelector(".view-header");
-		if (viewHeader instanceof HTMLElement) {
-			viewHeader.addClass("journal-hidden");
-		}
+			// Strip view header (title bar) — we have our own date header
+			const viewHeader = this.split.containerEl.querySelector(".view-header");
+			if (viewHeader instanceof HTMLElement) {
+				viewHeader.addClass("journal-hidden");
+			}
 
-		// Hide inline title if present
-		const inlineTitle = this.split.containerEl.querySelector(".inline-title");
-		if (inlineTitle instanceof HTMLElement && this.plugin.settings.hideH1) {
-			inlineTitle.addClass("journal-hidden");
+			// Hide inline title if present
+			const inlineTitle = this.split.containerEl.querySelector(".inline-title");
+			if (inlineTitle instanceof HTMLElement && this.plugin.settings.hideH1) {
+				inlineTitle.addClass("journal-hidden");
+			}
+		} catch (e) {
+			console.error("Journal: failed to mount editor for", this.file.path, e);
+			this.mounted = false;
 		}
 	}
 
@@ -251,14 +256,12 @@ export class JournalView extends ItemView {
 		// Scrollable container
 		this.scrollContainer = contentEl.createDiv({ cls: "journal-container" });
 
-		// Load notes
-		await this.loadNotes();
-
-		// Infinite scroll for loading more entries
+		// Set up observers before loading notes so editors can be observed immediately
 		this.setupInfiniteScroll();
-
-		// Viewport observer for mounting/unmounting editors
 		this.setupVisibilityObserver();
+
+		// Load notes (will observe + eagerly mount initial batch)
+		await this.loadNotes();
 
 		// Vault events
 		this.registerEvent(
@@ -289,12 +292,15 @@ export class JournalView extends ItemView {
 
 		const batchSize = this.plugin.settings.notesPerBatch;
 		const end = Math.min(this.loadedCount + batchSize, this.allEntries.length);
+		const isFirstBatch = this.loadedCount === 0;
 
 		// Remove sentinel
 		if (this.sentinelEl) {
 			this.sentinelEl.remove();
 			this.sentinelEl = null;
 		}
+
+		const newEditors: EmbeddedNoteEditor[] = [];
 
 		for (let i = this.loadedCount; i < end; i++) {
 			const entry = this.allEntries[i]!;
@@ -308,14 +314,28 @@ export class JournalView extends ItemView {
 			);
 			this.addChild(editor);
 			this.noteEditors.push(editor);
+			newEditors.push(editor);
 
-			// Observe for viewport visibility
+			// Observe for viewport visibility (mount/unmount on scroll)
 			if (this.visibilityObserver) {
 				this.visibilityObserver.observe(editor.getContainerEl());
 			}
 		}
 
 		this.loadedCount = end;
+
+		// Eagerly mount editors in the first batch — IntersectionObserver
+		// fires asynchronously so initial visible entries may not trigger
+		// immediately. For subsequent batches the observer handles it.
+		if (isFirstBatch) {
+			for (const editor of newEditors) {
+				try {
+					await editor.mountEditor();
+				} catch (e) {
+					console.error("Journal: eager mount failed", e);
+				}
+			}
+		}
 
 		// Sentinel for loading more
 		if (this.loadedCount < this.allEntries.length) {
