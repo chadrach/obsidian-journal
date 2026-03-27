@@ -245,11 +245,15 @@ export class JournalView extends ItemView {
 
 		this.config = getDailyNotesConfig(this.app, this.plugin.settings);
 
-		// Auto-create today's note
+		// Auto-create today's note (wrapped in try/catch so it never blocks the view)
 		if (this.plugin.settings.autoCreateToday) {
-			const todayPath = getDailyNotePath(moment(), this.config);
-			if (!this.app.vault.getAbstractFileByPath(todayPath)) {
-				await createDailyNote(this.app, moment(), this.config);
+			try {
+				const todayPath = getDailyNotePath(moment(), this.config);
+				if (!this.app.vault.getAbstractFileByPath(todayPath)) {
+					await createDailyNote(this.app, moment(), this.config);
+				}
+			} catch (e) {
+				console.warn("Journal: could not auto-create today's note", e);
 			}
 		}
 
