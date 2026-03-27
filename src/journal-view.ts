@@ -150,24 +150,32 @@ class EmbeddedNoteEditor extends Component {
 				inlineTitle.addClass("journal-hidden");
 			}
 
-			// Debug: log computed styles + full DOM
-			const cs = getComputedStyle(this.split.containerEl);
-			// eslint-disable-next-line no-console
-			console.log(
-				"Journal: mounted editor for", this.file.path,
-				"\n  split.containerEl computed:", {
-					display: cs.display,
-					position: cs.position,
-					height: cs.height,
-					overflow: cs.overflow,
-					flex: cs.flex,
-					inset: cs.inset,
-				},
-				"\n  split.containerEl size:", this.split.containerEl.offsetWidth, "x", this.split.containerEl.offsetHeight,
-				"\n  editorEl size:", this.editorEl.offsetWidth, "x", this.editorEl.offsetHeight,
-				"\n  leaf view type:", this.leaf.view?.getViewType(),
-				"\n  full DOM:", this.editorEl.innerHTML.slice(0, 1500),
-			);
+			// Re-apply layout after Obsidian finishes async rendering
+			const splitEl = this.split.containerEl;
+			requestAnimationFrame(() => {
+				this.forceFlowLayout(splitEl);
+				// Debug: log after rendering completes
+				const viewContent = splitEl.querySelector(".view-content");
+				const cmEditor = splitEl.querySelector(".cm-editor");
+				// eslint-disable-next-line no-console
+				console.log(
+					"Journal [post-rAF]:", this.file.path,
+					"\n  split size:", splitEl.offsetWidth, "x", splitEl.offsetHeight,
+					"\n  .view-content exists:", !!viewContent,
+					"\n  .view-content computed:", viewContent ? {
+						display: getComputedStyle(viewContent).display,
+						position: getComputedStyle(viewContent).position,
+						height: getComputedStyle(viewContent).height,
+						hasClass: (viewContent as HTMLElement).className,
+					} : "N/A",
+					"\n  .cm-editor exists:", !!cmEditor,
+					"\n  .cm-editor size:", cmEditor ? `${(cmEditor as HTMLElement).offsetWidth}x${(cmEditor as HTMLElement).offsetHeight}` : "N/A",
+					"\n  DOM after view-header:", splitEl.querySelector(".workspace-leaf-content")?.innerHTML.slice(
+						splitEl.querySelector(".workspace-leaf-content")?.innerHTML.indexOf("view-content") ?? 0,
+						2000,
+					),
+				);
+			});
 		} catch (e) {
 			console.error("Journal: failed to mount editor for", this.file.path, e);
 			this.mounted = false;
