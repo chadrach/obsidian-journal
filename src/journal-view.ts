@@ -144,6 +144,17 @@ class EmbeddedNoteEditor extends Component {
 			if (inlineTitle instanceof HTMLElement && this.plugin.settings.hideH1) {
 				inlineTitle.addClass("journal-hidden");
 			}
+
+			// Debug: log DOM structure so we can diagnose visibility issues
+			// eslint-disable-next-line no-console
+			console.log(
+				"Journal: mounted editor for", this.file.path,
+				"\n  split.containerEl classes:", this.split.containerEl.className,
+				"\n  split.containerEl size:", this.split.containerEl.offsetWidth, "x", this.split.containerEl.offsetHeight,
+				"\n  editorEl size:", this.editorEl.offsetWidth, "x", this.editorEl.offsetHeight,
+				"\n  leaf view type:", this.leaf.view?.getViewType(),
+				"\n  DOM tree:", this.editorEl.innerHTML.slice(0, 500),
+			);
 		} catch (e) {
 			console.error("Journal: failed to mount editor for", this.file.path, e);
 			this.mounted = false;
