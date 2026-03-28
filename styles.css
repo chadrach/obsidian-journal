@@ -1,15 +1,9 @@
 /*
- * Daily Journal Plugin Styles
- *
- * The journal view is an ItemView containing multiple embedded editors,
- * each backed by a real Obsidian MarkdownView via a detached WorkspaceSplit.
- * Every note is editable inline with Live Preview.
- *
- * Each editor gets an explicit height so Obsidian's absolute-positioned
- * workspace elements (which use inset:0) have a sized parent to fill.
+ * Daily Journal Plugin Styles — Diagnostic build
+ * Testing Page Preview HoverPopover embedding
  */
 
-/* ── Layout: scrollable journal container ── */
+/* ── Layout ── */
 .journal-view {
 	overflow: hidden;
 	display: flex;
@@ -64,60 +58,36 @@
 	color: var(--text-accent);
 }
 
-.journal-note-open-btn {
-	font-size: var(--font-ui-small);
-	color: var(--text-faint);
-	padding: var(--size-4-1) var(--size-4-2);
-	border-radius: var(--radius-s);
-	opacity: 0;
-	transition: opacity 100ms ease;
+/* ── Editor area ── */
+.journal-note-editor {
+	position: relative;
+	min-height: 3em;
 }
 
-.journal-note-header:hover .journal-note-open-btn {
-	opacity: 1;
+/* When a popover is reparented into our container, override its
+   floating/absolute positioning to flow inline. */
+.journal-has-popover .popover.hover-popover {
+	position: relative !important;
+	top: unset !important;
+	left: unset !important;
+	right: unset !important;
+	bottom: unset !important;
+	transform: none !important;
+	width: 100% !important;
+	max-height: none !important;
+	display: block !important;
+	opacity: 1 !important;
+	pointer-events: auto !important;
+	box-shadow: none !important;
 }
 
-.journal-note-open-btn:hover {
-	color: var(--text-accent);
-	background: var(--background-modifier-hover);
-}
-
-/* ── Header hiding ── */
-.journal-note-header-hidden {
+.journal-hover-target {
 	display: none;
 }
 
-/* Generic hide utility */
-.journal-hidden {
-	display: none !important;
-}
-
-/* ── Embedded Editor ── */
-.journal-note-editor {
-	position: relative;
-	height: 400px;
-	overflow: hidden;
-	border-radius: var(--radius-s);
-}
-
-/* Remove tab-bar-like chrome from the embedded leaf */
-.journal-note-editor .workspace-tab-header-container {
-	display: none !important;
-}
-
-/* Remove the view-actions bar (close/more buttons) from embedded leaves */
-.journal-note-editor .view-actions {
-	display: none !important;
-}
-
-/* Hide the resize handles between embedded leaves */
-.journal-note-editor .workspace-leaf-resize-handle {
-	display: none !important;
-}
-
-/* ── H1 / inline-title hiding ── */
-.journal-note-editor .inline-title {
-	/* Controlled via JS based on settings.hideH1 */
+.journal-no-popover {
+	color: var(--text-muted);
+	padding: var(--size-4-2);
 }
 
 /* ── Sentinel (infinite scroll trigger) ── */

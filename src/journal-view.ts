@@ -1,10 +1,9 @@
 import {
-	Component,
+	HoverPopover,
 	ItemView,
 	TAbstractFile,
 	TFile,
 	WorkspaceLeaf,
-	WorkspaceSplit,
 	moment,
 } from "obsidian";
 import { VIEW_TYPE_JOURNAL, JOURNAL_ICON } from "./constants";
@@ -18,219 +17,16 @@ import {
 } from "./daily-notes-utils";
 import type JournalPlugin from "./main";
 
-// WorkspaceSplit constructor is not typed but the class is public.
-// At runtime it accepts (workspace, direction).
-// containerEl exists at runtime but is not in the public typings.
-type ConstructableWorkspaceSplit = new (
-	workspace: unknown,
-	direction: string,
-) => WorkspaceSplit & { containerEl: HTMLElement };
-
-/**
- * Monkey-patch helper (same pattern as Hover Editor's `around`).
- * Temporarily replaces a method on an object. Returns a cleanup function
- * that restores the original.
- */
-function suppressMethod<T extends Record<string, unknown>>(
-	obj: T,
-	method: string,
-): () => void {
-	const original = obj[method];
-	(obj as Record<string, unknown>)[method] = () => {};
-	return () => {
-		(obj as Record<string, unknown>)[method] = original;
-	};
-}
-
-/**
- * An embedded editor for a single daily note.
- *
- * Creates a detached WorkspaceSplit, spawns a real WorkspaceLeaf inside it,
- * and opens the file as a MarkdownView. The editor container is given an
- * explicit height so Obsidian's absolute-positioned workspace elements
- * (which use inset:0) have a sized parent to fill.
- */
-class EmbeddedNoteEditor extends Component {
-	private plugin: JournalPlugin;
-	private file: TFile;
-	private date: ReturnType<typeof moment>;
-	private containerEl: HTMLElement;
-	private editorEl: HTMLElement;
-	private split: (WorkspaceSplit & { containerEl: HTMLElement }) | null = null;
-	private leaf: WorkspaceLeaf | null = null;
-	private mounted = false;
-	private onOpenInTab: (file: TFile) => void;
-
-	constructor(
-		plugin: JournalPlugin,
-		file: TFile,
-		date: ReturnType<typeof moment>,
-		parentEl: HTMLElement,
-		onOpenInTab: (file: TFile) => void,
-	) {
-		super();
-		this.plugin = plugin;
-		this.file = file;
-		this.date = date;
-		this.onOpenInTab = onOpenInTab;
-
-		// Outer container
-		this.containerEl = parentEl.createDiv({ cls: "journal-note-block" });
-
-		// Date header
-		const headerEl = this.containerEl.createDiv({ cls: "journal-note-header" });
-		if (this.plugin.settings.hideFilename) {
-			headerEl.addClass("journal-note-header-hidden");
-		}
-
-		const dateLabel = this.date.calendar(null, {
-			sameDay: "[Today] — dddd, MMMM D, YYYY",
-			lastDay: "[Yesterday] — dddd, MMMM D, YYYY",
-			lastWeek: "dddd, MMMM D, YYYY",
-			sameElse: "dddd, MMMM D, YYYY",
-		});
-
-		headerEl.createEl("span", {
-			text: dateLabel,
-			cls: "journal-note-date",
-		});
-
-		const openBtn = headerEl.createEl("span", {
-			cls: "journal-note-open-btn",
-			attr: { "aria-label": "Open in new tab" },
-		});
-		openBtn.textContent = "↗";
-		openBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			this.onOpenInTab(this.file);
-		});
-
-		headerEl.addEventListener("click", () => {
-			this.onOpenInTab(this.file);
-		});
-
-		// Editor mount point
-		this.editorEl = this.containerEl.createDiv({ cls: "journal-note-editor" });
-	}
-
-	/**
-	 * Mount the embedded editor: create a detached WorkspaceSplit,
-	 * spawn a leaf, and open the file.
-	 */
-	async mountEditor(): Promise<void> {
-		if (this.mounted) return;
-		this.mounted = true;
-
-		try {
-			const workspace = this.plugin.app.workspace;
-
-			// Create a detached WorkspaceSplit
-			this.split = new (WorkspaceSplit as unknown as ConstructableWorkspaceSplit)(
-				workspace,
-				"vertical",
-			);
-
-			// Override getRoot so Obsidian's layout engine can resolve the split
-			this.split.getRoot = () =>
-				workspace.rootSplit as unknown as ReturnType<WorkspaceSplit["getRoot"]>;
-
-			// Insert the split's container element into our DOM
-			this.editorEl.appendChild(this.split.containerEl);
-
-			// Suppress setActiveLeaf during leaf creation — Obsidian 1.8.7+
-			// automatically makes new leaves active, which would steal focus
-			// from the user's current position each time an editor mounts.
-			const restore = suppressMethod(
-				workspace as unknown as Record<string, unknown>,
-				"setActiveLeaf",
-			);
-			try {
-				this.leaf = workspace.createLeafInParent(this.split, 0);
-			} finally {
-				restore();
-			}
-
-			// Open the file as a markdown view in source/live-preview mode
-			await this.leaf.openFile(this.file, {
-				state: { mode: "source" },
-			});
-
-			// Strip view header (title bar) — we have our own date header
-			const viewHeader = this.split.containerEl.querySelector(".view-header");
-			if (viewHeader instanceof HTMLElement) {
-				viewHeader.addClass("journal-hidden");
-			}
-
-			// Hide inline title if settings say so
-			if (this.plugin.settings.hideH1) {
-				const inlineTitle = this.split.containerEl.querySelector(".inline-title");
-				if (inlineTitle instanceof HTMLElement) {
-					inlineTitle.addClass("journal-hidden");
-				}
-			}
-		} catch (e) {
-			console.error("Journal: failed to mount editor for", this.file.path, e);
-			this.mounted = false;
-		}
-	}
-
-	/**
-	 * Unmount the editor to free resources when scrolled out of view.
-	 */
-	unmountEditor(): void {
-		if (!this.mounted) return;
-
-		// Detach the leaf (this destroys the MarkdownView)
-		if (this.leaf) {
-			this.leaf.detach();
-			this.leaf = null;
-		}
-
-		this.split = null;
-		this.editorEl.empty();
-		this.mounted = false;
-	}
-
-	isMounted(): boolean {
-		return this.mounted;
-	}
-
-	getFile(): TFile {
-		return this.file;
-	}
-
-	getContainerEl(): HTMLElement {
-		return this.containerEl;
-	}
-
-	onunload(): void {
-		if (this.leaf) {
-			this.leaf.detach();
-			this.leaf = null;
-		}
-		this.split = null;
-		this.containerEl.remove();
-	}
-}
-
 /**
  * The main journal view — a scrollable, reverse-chronological list of daily
- * notes, each with its own embedded Live Preview editor.
- *
- * Every visible note gets a real Obsidian MarkdownView via an embedded
- * WorkspaceLeaf. Notes that scroll out of the viewport are unmounted to
- * save resources.
+ * notes, each with its own embedded editor via Page Preview's HoverPopover.
  */
 export class JournalView extends ItemView {
 	private plugin: JournalPlugin;
 	private scrollContainer: HTMLElement | null = null;
-	private noteEditors: EmbeddedNoteEditor[] = [];
 	private allEntries: DailyNoteEntry[] = [];
-	private loadedCount = 0;
-	private sentinelEl: HTMLElement | null = null;
-	private loadMoreObserver: IntersectionObserver | null = null;
-	private visibilityObserver: IntersectionObserver | null = null;
 	private config: DailyNotesConfig | null = null;
+	private popovers: HoverPopover[] = [];
 
 	constructor(leaf: WorkspaceLeaf, plugin: JournalPlugin) {
 		super(leaf);
@@ -256,7 +52,7 @@ export class JournalView extends ItemView {
 
 		this.config = getDailyNotesConfig(this.app, this.plugin.settings);
 
-		// Auto-create today's note (wrapped in try/catch so it never blocks the view)
+		// Auto-create today's note
 		if (this.plugin.settings.autoCreateToday) {
 			try {
 				const todayPath = getDailyNotePath(moment(), this.config);
@@ -271,17 +67,17 @@ export class JournalView extends ItemView {
 		// Scrollable container
 		this.scrollContainer = contentEl.createDiv({ cls: "journal-container" });
 
-		// Set up observers before loading notes so editors can be observed immediately
-		this.setupInfiniteScroll();
-		this.setupVisibilityObserver();
+		// Load entries
+		this.allEntries = findExistingDailyNotes(this.app, this.config);
 
-		// Load notes (will observe + eagerly mount initial batch)
-		await this.loadNotes();
+		// For each daily note, create a section and try to trigger a Page Preview popover
+		const maxEntries = Math.min(this.allEntries.length, 5); // limit for diagnostic
+		for (let i = 0; i < maxEntries; i++) {
+			const entry = this.allEntries[i]!;
+			await this.createNoteSection(entry);
+		}
 
 		// Vault events
-		this.registerEvent(
-			this.app.vault.on("modify", (f) => this.onFileModified(f)),
-		);
 		this.registerEvent(
 			this.app.vault.on("create", (f) => this.onFileCreated(f)),
 		);
@@ -293,204 +89,122 @@ export class JournalView extends ItemView {
 		);
 	}
 
-	private async loadNotes(): Promise<void> {
-		if (!this.config) return;
+	private async createNoteSection(entry: DailyNoteEntry): Promise<void> {
+		if (!this.scrollContainer) return;
 
-		this.allEntries = findExistingDailyNotes(this.app, this.config);
-		this.loadedCount = 0;
-		this.clearEditors();
-		await this.loadNextBatch();
-	}
+		const block = this.scrollContainer.createDiv({ cls: "journal-note-block" });
 
-	private async loadNextBatch(): Promise<void> {
-		if (!this.scrollContainer || !this.config) return;
+		// Date header
+		const headerEl = block.createDiv({ cls: "journal-note-header" });
+		const dateLabel = entry.date.calendar(null, {
+			sameDay: "[Today] — dddd, MMMM D, YYYY",
+			lastDay: "[Yesterday] — dddd, MMMM D, YYYY",
+			lastWeek: "dddd, MMMM D, YYYY",
+			sameElse: "dddd, MMMM D, YYYY",
+		});
+		headerEl.createEl("span", { text: dateLabel, cls: "journal-note-date" });
 
-		const batchSize = this.plugin.settings.notesPerBatch;
-		const end = Math.min(this.loadedCount + batchSize, this.allEntries.length);
-		const isFirstBatch = this.loadedCount === 0;
+		headerEl.addEventListener("click", () => {
+			const leaf = this.app.workspace.getLeaf("tab");
+			void leaf.openFile(entry.file);
+		});
 
-		// Remove sentinel
-		if (this.sentinelEl) {
-			this.sentinelEl.remove();
-			this.sentinelEl = null;
-		}
+		// Editor area — this is where we'll try to embed a Page Preview popover
+		const editorEl = block.createDiv({ cls: "journal-note-editor" });
 
-		const newEditors: EmbeddedNoteEditor[] = [];
+		// Create a fake link target that Page Preview can latch onto
+		const targetEl = editorEl.createEl("span", {
+			cls: "journal-hover-target",
+			text: entry.file.basename,
+		});
 
-		for (let i = this.loadedCount; i < end; i++) {
-			const entry = this.allEntries[i]!;
+		// Create a HoverParent that Page Preview expects
+		const hoverParent = {
+			hoverPopover: null as HoverPopover | null,
+		};
 
-			const editor = new EmbeddedNoteEditor(
-				this.plugin,
-				entry.file,
-				entry.date,
-				this.scrollContainer,
-				(file) => this.openInNewTab(file),
+		// Trigger the hover-link event that Page Preview listens for
+		this.app.workspace.trigger("hover-link", {
+			event: new MouseEvent("mouseover", {
+				clientX: 100,
+				clientY: 100,
+			}),
+			source: "daily-journal",
+			hoverParent: hoverParent,
+			targetEl: targetEl,
+			linktext: entry.file.path,
+			sourcePath: "",
+		});
+
+		// Wait for Page Preview to create the popover
+		await new Promise<void>((resolve) => {
+			let checks = 0;
+			const interval = setInterval(() => {
+				checks++;
+				if (hoverParent.hoverPopover || checks > 20) {
+					clearInterval(interval);
+					resolve();
+				}
+			}, 100);
+		});
+
+		if (hoverParent.hoverPopover) {
+			const popover = hoverParent.hoverPopover;
+			this.popovers.push(popover);
+
+			// eslint-disable-next-line no-console
+			console.log(
+				"Journal: Page Preview popover created for", entry.file.path,
+				"\n  popover type:", popover.constructor.name,
+				"\n  hoverEl classes:", popover.hoverEl?.className,
+				"\n  hoverEl size:", popover.hoverEl?.offsetWidth, "x", popover.hoverEl?.offsetHeight,
+				"\n  state:", popover.state,
+				"\n  hoverEl children:", popover.hoverEl?.childElementCount,
+				"\n  hoverEl innerHTML (2000):", popover.hoverEl?.innerHTML?.slice(0, 2000),
+				"\n  all popover properties:", Object.getOwnPropertyNames(popover),
+				"\n  popover prototype methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(popover)),
 			);
-			this.addChild(editor);
-			this.noteEditors.push(editor);
-			newEditors.push(editor);
 
-			// Observe for viewport visibility (mount/unmount on scroll)
-			if (this.visibilityObserver) {
-				this.visibilityObserver.observe(editor.getContainerEl());
+			// Try to reparent the popover's hoverEl into our container
+			// instead of it floating on document.body
+			if (popover.hoverEl) {
+				editorEl.appendChild(popover.hoverEl);
+				editorEl.addClass("journal-has-popover");
 			}
-		}
-
-		this.loadedCount = end;
-
-		// Eagerly mount editors in the first batch — IntersectionObserver
-		// fires asynchronously so initial visible entries may not trigger
-		// immediately. For subsequent batches the observer handles it.
-		if (isFirstBatch) {
-			for (const editor of newEditors) {
-				try {
-					await editor.mountEditor();
-				} catch (e) {
-					console.error("Journal: eager mount failed", e);
-				}
-			}
-		}
-
-		// Sentinel for loading more
-		if (this.loadedCount < this.allEntries.length) {
-			this.sentinelEl = this.scrollContainer.createDiv({
-				cls: "journal-sentinel",
+		} else {
+			// eslint-disable-next-line no-console
+			console.log("Journal: No popover created for", entry.file.path,
+				"(Page Preview may be disabled or not responding to our event)");
+			editorEl.createEl("em", {
+				text: "No popover created",
+				cls: "journal-no-popover",
 			});
-			if (this.loadMoreObserver) {
-				this.loadMoreObserver.observe(this.sentinelEl);
-			}
 		}
-	}
-
-	private setupInfiniteScroll(): void {
-		if (!this.scrollContainer) return;
-
-		this.loadMoreObserver = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					if (entry.isIntersecting && this.loadedCount < this.allEntries.length) {
-						void this.loadNextBatch();
-					}
-				}
-			},
-			{
-				root: this.scrollContainer,
-				rootMargin: "300px",
-			},
-		);
-
-		if (this.sentinelEl) {
-			this.loadMoreObserver.observe(this.sentinelEl);
-		}
-	}
-
-	/**
-	 * Observe which note blocks are in/near the viewport.
-	 * Mount editors when they enter; unmount when they leave.
-	 */
-	private setupVisibilityObserver(): void {
-		if (!this.scrollContainer) return;
-
-		this.visibilityObserver = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					const el = entry.target as HTMLElement;
-					const editor = this.noteEditors.find(
-						(e) => e.getContainerEl() === el,
-					);
-					if (!editor) continue;
-
-					if (entry.isIntersecting) {
-						if (!editor.isMounted()) {
-							void editor.mountEditor();
-						}
-					} else {
-						if (editor.isMounted()) {
-							editor.unmountEditor();
-						}
-					}
-				}
-			},
-			{
-				root: this.scrollContainer,
-				// Mount editors a full viewport before they scroll into view
-				rootMargin: "100% 0px",
-			},
-		);
-
-		for (const editor of this.noteEditors) {
-			this.visibilityObserver.observe(editor.getContainerEl());
-		}
-	}
-
-	private clearEditors(): void {
-		for (const editor of this.noteEditors) {
-			this.removeChild(editor);
-		}
-		this.noteEditors = [];
-		if (this.scrollContainer) {
-			this.scrollContainer.empty();
-		}
-	}
-
-	private openInNewTab(file: TFile): void {
-		const leaf = this.app.workspace.getLeaf("tab");
-		void leaf.openFile(file);
-	}
-
-	// ── Vault event handlers ────────────────────────────────────────
-
-	private isRelevantFile(file: TAbstractFile): boolean {
-		if (!(file instanceof TFile) || file.extension !== "md" || !this.config) {
-			return false;
-		}
-		const prefix = this.config.folder ? this.config.folder + "/" : "";
-		return file.path.startsWith(prefix);
-	}
-
-	private onFileModified(_file: TAbstractFile): void {
-		// Embedded MarkdownViews handle their own file-change syncing.
-		// No action needed.
 	}
 
 	private onFileCreated(file: TAbstractFile): void {
-		if (!this.isRelevantFile(file) || !this.config) return;
-		if (!(file instanceof TFile)) return;
+		if (!(file instanceof TFile) || !this.config) return;
 		const date = moment(file.basename, this.config.format, true);
 		if (!date.isValid()) return;
-		void this.loadNotes();
+		this.allEntries = findExistingDailyNotes(this.app, this.config);
 	}
 
-	private onFileDeleted(file: TAbstractFile): void {
-		if (!(file instanceof TFile)) return;
-		const idx = this.noteEditors.findIndex((e) => e.getFile().path === file.path);
-		if (idx !== -1) {
-			const editor = this.noteEditors[idx]!;
-			this.removeChild(editor);
-			this.noteEditors.splice(idx, 1);
-			this.allEntries = this.allEntries.filter((e) => e.file.path !== file.path);
-			this.loadedCount = Math.max(0, this.loadedCount - 1);
+	private onFileDeleted(_file: TAbstractFile): void {
+		if (this.config) {
+			this.allEntries = findExistingDailyNotes(this.app, this.config);
 		}
 	}
 
 	private onFileRenamed(): void {
 		if (this.config) {
-			void this.loadNotes();
+			this.allEntries = findExistingDailyNotes(this.app, this.config);
 		}
 	}
 
-	// ── Cleanup ─────────────────────────────────────────────────────
-
 	async onClose(): Promise<void> {
-		if (this.loadMoreObserver) {
-			this.loadMoreObserver.disconnect();
-			this.loadMoreObserver = null;
+		for (const popover of this.popovers) {
+			popover.unload();
 		}
-		if (this.visibilityObserver) {
-			this.visibilityObserver.disconnect();
-			this.visibilityObserver = null;
-		}
-		this.clearEditors();
+		this.popovers = [];
 	}
 }
