@@ -14,6 +14,12 @@ export default class JournalPlugin extends Plugin {
 			(leaf) => new JournalView(leaf, this),
 		);
 
+		// Register as a hover link source so Page Preview responds to our events
+		this.registerHoverLinkSource(VIEW_TYPE_JOURNAL, {
+			display: "Daily journal",
+			defaultMod: false,
+		});
+
 		this.addRibbonIcon(JOURNAL_ICON, "Open journal", () => {
 			void this.activateJournalView();
 		});

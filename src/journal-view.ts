@@ -1,7 +1,7 @@
+/* eslint-disable obsidianmd/ui/sentence-case */
 import {
 	HoverPopover,
 	ItemView,
-	TAbstractFile,
 	TFile,
 	WorkspaceLeaf,
 	moment,
@@ -18,8 +18,8 @@ import {
 import type JournalPlugin from "./main";
 
 /**
- * The main journal view — a scrollable, reverse-chronological list of daily
- * notes, each with its own embedded editor via Page Preview's HoverPopover.
+ * Diagnostic journal view — tests Page Preview HoverPopover embedding.
+ * Tries multiple approaches to create editable popovers for daily notes.
  */
 export class JournalView extends ItemView {
 	private plugin: JournalPlugin;
@@ -64,141 +64,232 @@ export class JournalView extends ItemView {
 			}
 		}
 
-		// Scrollable container
 		this.scrollContainer = contentEl.createDiv({ cls: "journal-container" });
-
-		// Load entries
 		this.allEntries = findExistingDailyNotes(this.app, this.config);
 
-		// For each daily note, create a section and try to trigger a Page Preview popover
-		const maxEntries = Math.min(this.allEntries.length, 5); // limit for diagnostic
-		for (let i = 0; i < maxEntries; i++) {
-			const entry = this.allEntries[i]!;
-			await this.createNoteSection(entry);
+		// Test with the first entry only
+		if (this.allEntries.length > 0) {
+			const entry = this.allEntries[0]!;
+			await this.testApproaches(entry);
 		}
 
-		// Vault events
 		this.registerEvent(
-			this.app.vault.on("create", (f) => this.onFileCreated(f)),
-		);
-		this.registerEvent(
-			this.app.vault.on("delete", (f) => this.onFileDeleted(f)),
-		);
-		this.registerEvent(
-			this.app.vault.on("rename", () => this.onFileRenamed()),
+			this.app.vault.on("create", (f) => {
+				if (f instanceof TFile && this.config) {
+					this.allEntries = findExistingDailyNotes(this.app, this.config);
+				}
+			}),
 		);
 	}
 
-	private async createNoteSection(entry: DailyNoteEntry): Promise<void> {
+	private async testApproaches(entry: DailyNoteEntry): Promise<void> {
 		if (!this.scrollContainer) return;
 
-		const block = this.scrollContainer.createDiv({ cls: "journal-note-block" });
+		// ── Approach A: Direct HoverPopover constructor ──
+		const blockA = this.scrollContainer.createDiv({ cls: "journal-note-block" });
+		blockA.createEl("h3", { text: "Approach A: direct HoverPopover constructor" });
 
-		// Date header
-		const headerEl = block.createDiv({ cls: "journal-note-header" });
-		const dateLabel = entry.date.calendar(null, {
-			sameDay: "[Today] — dddd, MMMM D, YYYY",
-			lastDay: "[Yesterday] — dddd, MMMM D, YYYY",
-			lastWeek: "dddd, MMMM D, YYYY",
-			sameElse: "dddd, MMMM D, YYYY",
-		});
-		headerEl.createEl("span", { text: dateLabel, cls: "journal-note-date" });
+		const targetA = blockA.createDiv({ cls: "journal-hover-target" });
+		targetA.textContent = entry.file.basename;
 
-		headerEl.addEventListener("click", () => {
-			const leaf = this.app.workspace.getLeaf("tab");
-			void leaf.openFile(entry.file);
-		});
+		const parentA = { hoverPopover: null as HoverPopover | null };
 
-		// Editor area — this is where we'll try to embed a Page Preview popover
-		const editorEl = block.createDiv({ cls: "journal-note-editor" });
-
-		// Create a fake link target that Page Preview can latch onto
-		const targetEl = editorEl.createEl("span", {
-			cls: "journal-hover-target",
-			text: entry.file.basename,
-		});
-
-		// Create a HoverParent that Page Preview expects
-		const hoverParent = {
-			hoverPopover: null as HoverPopover | null,
-		};
-
-		// Trigger the hover-link event that Page Preview listens for
-		this.app.workspace.trigger("hover-link", {
-			event: new MouseEvent("mouseover", {
-				clientX: 100,
-				clientY: 100,
-			}),
-			source: "daily-journal",
-			hoverParent: hoverParent,
-			targetEl: targetEl,
-			linktext: entry.file.path,
-			sourcePath: "",
-		});
-
-		// Wait for Page Preview to create the popover
-		await new Promise<void>((resolve) => {
-			let checks = 0;
-			const interval = setInterval(() => {
-				checks++;
-				if (hoverParent.hoverPopover || checks > 20) {
-					clearInterval(interval);
-					resolve();
-				}
-			}, 100);
-		});
-
-		if (hoverParent.hoverPopover) {
-			const popover = hoverParent.hoverPopover;
+		try {
+			const popover = new HoverPopover(parentA, targetA, 0);
+			parentA.hoverPopover = popover;
 			this.popovers.push(popover);
+
+			// Wait a frame for initialization
+			await new Promise<void>((resolve) => {
+				requestAnimationFrame(() => resolve());
+			});
 
 			// eslint-disable-next-line no-console
 			console.log(
-				"Journal: Page Preview popover created for", entry.file.path,
-				"\n  popover type:", popover.constructor.name,
+				"Journal [A] Direct constructor:",
+				"\n  popover:", popover,
+				"\n  hoverEl:", popover.hoverEl,
 				"\n  hoverEl classes:", popover.hoverEl?.className,
-				"\n  hoverEl size:", popover.hoverEl?.offsetWidth, "x", popover.hoverEl?.offsetHeight,
+				"\n  hoverEl parent:", popover.hoverEl?.parentElement?.tagName,
 				"\n  state:", popover.state,
-				"\n  hoverEl children:", popover.hoverEl?.childElementCount,
-				"\n  hoverEl innerHTML (2000):", popover.hoverEl?.innerHTML?.slice(0, 2000),
-				"\n  all popover properties:", Object.getOwnPropertyNames(popover),
-				"\n  popover prototype methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(popover)),
+				"\n  all own props:", Object.keys(popover),
+				"\n  prototype methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(popover)),
 			);
 
-			// Try to reparent the popover's hoverEl into our container
-			// instead of it floating on document.body
 			if (popover.hoverEl) {
-				editorEl.appendChild(popover.hoverEl);
-				editorEl.addClass("journal-has-popover");
+				blockA.appendChild(popover.hoverEl);
+				blockA.createEl("p", { text: `hoverEl found, classes: ${popover.hoverEl.className}` });
+			} else {
+				blockA.createEl("p", { text: "No hoverEl created" });
 			}
+		} catch (e) {
+			console.error("Journal [A] Error:", e);
+			blockA.createEl("p", { text: `Error: ${String(e)}` });
+		}
+
+		// ── Approach B: hover-link event with our registered source ──
+		const blockB = this.scrollContainer.createDiv({ cls: "journal-note-block" });
+		blockB.createEl("h3", { text: "Approach B: hover-link with registered source" });
+
+		const targetB = blockB.createDiv({ cls: "journal-hover-target" });
+		targetB.textContent = entry.file.basename;
+
+		const parentB = { hoverPopover: null as HoverPopover | null };
+
+		// linktext without .md extension (how internal links work)
+		const linktext = entry.file.path.replace(/\.md$/, "");
+
+		this.app.workspace.trigger("hover-link", {
+			event: new MouseEvent("mouseover", { clientX: 200, clientY: 200 }),
+			source: VIEW_TYPE_JOURNAL,
+			hoverParent: parentB,
+			targetEl: targetB,
+			linktext: linktext,
+			sourcePath: "",
+		});
+
+		await this.waitForPopover(parentB, 3000);
+
+		// eslint-disable-next-line no-console
+		console.log("Journal [B] hover-link (our source):", {
+			popoverCreated: !!parentB.hoverPopover,
+			popover: parentB.hoverPopover,
+			hoverEl: parentB.hoverPopover?.hoverEl,
+			state: parentB.hoverPopover?.state,
+		});
+
+		if (parentB.hoverPopover?.hoverEl) {
+			blockB.appendChild(parentB.hoverPopover.hoverEl);
+			this.popovers.push(parentB.hoverPopover);
+			blockB.createEl("p", { text: "Popover created and reparented" });
 		} else {
-			// eslint-disable-next-line no-console
-			console.log("Journal: No popover created for", entry.file.path,
-				"(Page Preview may be disabled or not responding to our event)");
-			editorEl.createEl("em", {
-				text: "No popover created",
-				cls: "journal-no-popover",
-			});
+			blockB.createEl("p", { text: "No popover created" });
+		}
+
+		// ── Approach C: hover-link with "preview" source ──
+		const blockC = this.scrollContainer.createDiv({ cls: "journal-note-block" });
+		blockC.createEl("h3", { text: "Approach C: hover-link with 'preview' source" });
+
+		const targetC = blockC.createDiv({ cls: "journal-hover-target" });
+		targetC.textContent = entry.file.basename;
+
+		const parentC = { hoverPopover: null as HoverPopover | null };
+
+		this.app.workspace.trigger("hover-link", {
+			event: new MouseEvent("mouseover", { clientX: 300, clientY: 300 }),
+			source: "preview",
+			hoverParent: parentC,
+			targetEl: targetC,
+			linktext: linktext,
+			sourcePath: "",
+		});
+
+		await this.waitForPopover(parentC, 3000);
+
+		// eslint-disable-next-line no-console
+		console.log("Journal [C] hover-link (preview source):", {
+			popoverCreated: !!parentC.hoverPopover,
+			popover: parentC.hoverPopover,
+			hoverEl: parentC.hoverPopover?.hoverEl,
+			state: parentC.hoverPopover?.state,
+		});
+
+		if (parentC.hoverPopover?.hoverEl) {
+			blockC.appendChild(parentC.hoverPopover.hoverEl);
+			this.popovers.push(parentC.hoverPopover);
+			blockC.createEl("p", { text: "Popover created and reparented" });
+		} else {
+			blockC.createEl("p", { text: "No popover created" });
+		}
+
+		// ── Approach D: hover-link with "editor" source ──
+		const blockD = this.scrollContainer.createDiv({ cls: "journal-note-block" });
+		blockD.createEl("h3", { text: "Approach D: hover-link with 'editor' source" });
+
+		const targetD = blockD.createDiv({ cls: "journal-hover-target" });
+		targetD.textContent = entry.file.basename;
+
+		const parentD = { hoverPopover: null as HoverPopover | null };
+
+		this.app.workspace.trigger("hover-link", {
+			event: new MouseEvent("mouseover", { clientX: 400, clientY: 400 }),
+			source: "editor",
+			hoverParent: parentD,
+			targetEl: targetD,
+			linktext: linktext,
+			sourcePath: "",
+		});
+
+		await this.waitForPopover(parentD, 3000);
+
+		// eslint-disable-next-line no-console
+		console.log("Journal [D] hover-link (editor source):", {
+			popoverCreated: !!parentD.hoverPopover,
+			popover: parentD.hoverPopover,
+			hoverEl: parentD.hoverPopover?.hoverEl,
+			state: parentD.hoverPopover?.state,
+		});
+
+		if (parentD.hoverPopover?.hoverEl) {
+			blockD.appendChild(parentD.hoverPopover.hoverEl);
+			this.popovers.push(parentD.hoverPopover);
+			blockD.createEl("p", { text: "Popover created and reparented" });
+		} else {
+			blockD.createEl("p", { text: "No popover created" });
+		}
+
+		// ── Approach E: Inspect Page Preview plugin internals ──
+		const blockE = this.scrollContainer.createDiv({ cls: "journal-note-block" });
+		blockE.createEl("h3", { text: "Approach E: Page Preview plugin inspection" });
+
+		const internalPlugins = (this.app as unknown as Record<string, unknown>)
+			.internalPlugins as Record<string, unknown> | undefined;
+
+		// eslint-disable-next-line no-console
+		console.log("Journal [E] Internal plugins inspection:", {
+			hasInternalPlugins: !!internalPlugins,
+			internalPluginKeys: internalPlugins ? Object.keys(internalPlugins) : "N/A",
+		});
+
+		if (internalPlugins) {
+			const getPlugin = (internalPlugins as { getPluginById?: (id: string) => unknown })
+				.getPluginById;
+			if (getPlugin) {
+				const pagePreview = getPlugin.call(internalPlugins, "page-preview") as Record<string, unknown> | undefined;
+				// eslint-disable-next-line no-console
+				console.log("Journal [E] Page Preview plugin:", {
+					exists: !!pagePreview,
+					enabled: pagePreview?.enabled,
+					instanceKeys: pagePreview?.instance ? Object.keys(pagePreview.instance as object) : "N/A",
+					instanceProtoMethods: pagePreview?.instance
+						? Object.getOwnPropertyNames(Object.getPrototypeOf(pagePreview.instance))
+						: "N/A",
+				});
+
+				const preEl = blockE.createEl("pre");
+				preEl.textContent = JSON.stringify({
+					exists: !!pagePreview,
+					enabled: pagePreview?.enabled,
+					instanceKeys: pagePreview?.instance ? Object.keys(pagePreview.instance as object) : "N/A",
+				}, null, 2);
+			}
 		}
 	}
 
-	private onFileCreated(file: TAbstractFile): void {
-		if (!(file instanceof TFile) || !this.config) return;
-		const date = moment(file.basename, this.config.format, true);
-		if (!date.isValid()) return;
-		this.allEntries = findExistingDailyNotes(this.app, this.config);
-	}
-
-	private onFileDeleted(_file: TAbstractFile): void {
-		if (this.config) {
-			this.allEntries = findExistingDailyNotes(this.app, this.config);
-		}
-	}
-
-	private onFileRenamed(): void {
-		if (this.config) {
-			this.allEntries = findExistingDailyNotes(this.app, this.config);
-		}
+	private waitForPopover(
+		parent: { hoverPopover: HoverPopover | null },
+		timeoutMs: number,
+	): Promise<void> {
+		return new Promise<void>((resolve) => {
+			let elapsed = 0;
+			const interval = setInterval(() => {
+				elapsed += 50;
+				if (parent.hoverPopover || elapsed >= timeoutMs) {
+					clearInterval(interval);
+					resolve();
+				}
+			}, 50);
+		});
 	}
 
 	async onClose(): Promise<void> {
