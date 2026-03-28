@@ -27,15 +27,28 @@ type ConstructableWorkspaceSplit = new (
 ) => WorkspaceSplit & { containerEl: HTMLElement };
 
 /**
+ * Monkey-patch helper (same pattern as Hover Editor's `around`).
+ * Temporarily replaces a method on an object. Returns a cleanup function
+ * that restores the original.
+ */
+function suppressMethod<T extends Record<string, unknown>>(
+	obj: T,
+	method: string,
+): () => void {
+	const original = obj[method];
+	(obj as Record<string, unknown>)[method] = () => {};
+	return () => {
+		(obj as Record<string, unknown>)[method] = original;
+	};
+}
+
+/**
  * An embedded editor for a single daily note.
  *
  * Creates a detached WorkspaceSplit, spawns a real WorkspaceLeaf inside it,
- * and opens the file as a MarkdownView. The split's containerEl is inserted
- * inline in the journal scroll view, giving us a fully-functional Obsidian
- * editor (Live Preview, backlinks, commands, etc.) without a visible tab.
- *
- * This is the same fundamental technique used by the Hover Editor plugin
- * and Obsidian's own Page Preview editing feature.
+ * and opens the file as a MarkdownView. The editor container is given an
+ * explicit height so Obsidian's absolute-positioned workspace elements
+ * (which use inset:0) have a sized parent to fill.
  */
 class EmbeddedNoteEditor extends Component {
 	private plugin: JournalPlugin;
@@ -46,7 +59,6 @@ class EmbeddedNoteEditor extends Component {
 	private split: (WorkspaceSplit & { containerEl: HTMLElement }) | null = null;
 	private leaf: WorkspaceLeaf | null = null;
 	private mounted = false;
-	private cachedHeight: number | null = null;
 	private onOpenInTab: (file: TFile) => void;
 
 	constructor(
@@ -125,18 +137,23 @@ class EmbeddedNoteEditor extends Component {
 			// Insert the split's container element into our DOM
 			this.editorEl.appendChild(this.split.containerEl);
 
-			// Create a real leaf inside the split
-			this.leaf = workspace.createLeafInParent(this.split, 0);
+			// Suppress setActiveLeaf during leaf creation — Obsidian 1.8.7+
+			// automatically makes new leaves active, which would steal focus
+			// from the user's current position each time an editor mounts.
+			const restore = suppressMethod(
+				workspace as unknown as Record<string, unknown>,
+				"setActiveLeaf",
+			);
+			try {
+				this.leaf = workspace.createLeafInParent(this.split, 0);
+			} finally {
+				restore();
+			}
 
 			// Open the file as a markdown view in source/live-preview mode
 			await this.leaf.openFile(this.file, {
 				state: { mode: "source" },
 			});
-
-			// Force flow-layout on all workspace elements via inline styles.
-			// Obsidian's CSS uses high-specificity selectors or JS-set styles
-			// that beat our stylesheet !important overrides.
-			this.forceFlowLayout(this.split.containerEl);
 
 			// Strip view header (title bar) — we have our own date header
 			const viewHeader = this.split.containerEl.querySelector(".view-header");
@@ -144,38 +161,13 @@ class EmbeddedNoteEditor extends Component {
 				viewHeader.addClass("journal-hidden");
 			}
 
-			// Hide inline title if present
-			const inlineTitle = this.split.containerEl.querySelector(".inline-title");
-			if (inlineTitle instanceof HTMLElement && this.plugin.settings.hideH1) {
-				inlineTitle.addClass("journal-hidden");
+			// Hide inline title if settings say so
+			if (this.plugin.settings.hideH1) {
+				const inlineTitle = this.split.containerEl.querySelector(".inline-title");
+				if (inlineTitle instanceof HTMLElement) {
+					inlineTitle.addClass("journal-hidden");
+				}
 			}
-
-			// Re-apply layout after Obsidian finishes async rendering
-			const splitEl = this.split.containerEl;
-			requestAnimationFrame(() => {
-				this.forceFlowLayout(splitEl);
-				// Debug: log after rendering completes
-				const viewContent = splitEl.querySelector(".view-content");
-				const cmEditor = splitEl.querySelector(".cm-editor");
-				// eslint-disable-next-line no-console
-				console.log(
-					"Journal [post-rAF]:", this.file.path,
-					"\n  split size:", splitEl.offsetWidth, "x", splitEl.offsetHeight,
-					"\n  .view-content exists:", !!viewContent,
-					"\n  .view-content computed:", viewContent ? {
-						display: getComputedStyle(viewContent).display,
-						position: getComputedStyle(viewContent).position,
-						height: getComputedStyle(viewContent).height,
-						hasClass: (viewContent as HTMLElement).className,
-					} : "N/A",
-					"\n  .cm-editor exists:", !!cmEditor,
-					"\n  .cm-editor size:", cmEditor ? `${(cmEditor as HTMLElement).offsetWidth}x${(cmEditor as HTMLElement).offsetHeight}` : "N/A",
-					"\n  DOM after view-header:", splitEl.querySelector(".workspace-leaf-content")?.innerHTML.slice(
-						splitEl.querySelector(".workspace-leaf-content")?.innerHTML.indexOf("view-content") ?? 0,
-						2000,
-					),
-				);
-			});
 		} catch (e) {
 			console.error("Journal: failed to mount editor for", this.file.path, e);
 			this.mounted = false;
@@ -184,16 +176,9 @@ class EmbeddedNoteEditor extends Component {
 
 	/**
 	 * Unmount the editor to free resources when scrolled out of view.
-	 * Preserves the height to prevent scroll jumps.
 	 */
 	unmountEditor(): void {
 		if (!this.mounted) return;
-
-		// Cache height before unmounting
-		const rect = this.editorEl.getBoundingClientRect();
-		if (rect.height > 0) {
-			this.cachedHeight = rect.height;
-		}
 
 		// Detach the leaf (this destroys the MarkdownView)
 		if (this.leaf) {
@@ -203,47 +188,7 @@ class EmbeddedNoteEditor extends Component {
 
 		this.split = null;
 		this.editorEl.empty();
-
-		// Set min-height to prevent scroll jump
-		if (this.cachedHeight) {
-			this.editorEl.setCssProps({ "--journal-cached-height": `${this.cachedHeight}px` });
-		}
-
 		this.mounted = false;
-	}
-
-	/**
-	 * Force all workspace elements inside the embedded editor to use
-	 * flow layout instead of Obsidian's default absolute positioning.
-	 */
-	private forceFlowLayout(root: HTMLElement): void {
-		const selectors = [
-			".workspace-split",
-			".workspace-leaf",
-			".workspace-leaf-content",
-			".view-content",
-			".markdown-source-view",
-			".cm-editor",
-		];
-
-		// Also apply to root itself (it IS the workspace-split)
-		const targets = [root];
-		for (const sel of selectors) {
-			const found = root.querySelectorAll(sel);
-			found.forEach((el) => {
-				if (el instanceof HTMLElement) targets.push(el);
-			});
-		}
-
-		for (const el of targets) {
-			el.addClass("journal-flow-layout");
-		}
-
-		// CM scroller needs special treatment
-		const scroller = root.querySelector(".cm-scroller");
-		if (scroller instanceof HTMLElement) {
-			scroller.addClass("journal-flow-scroller");
-		}
 	}
 
 	isMounted(): boolean {

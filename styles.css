@@ -4,6 +4,9 @@
  * The journal view is an ItemView containing multiple embedded editors,
  * each backed by a real Obsidian MarkdownView via a detached WorkspaceSplit.
  * Every note is editable inline with Live Preview.
+ *
+ * Each editor gets an explicit height so Obsidian's absolute-positioned
+ * workspace elements (which use inset:0) have a sized parent to fill.
  */
 
 /* ── Layout: scrollable journal container ── */
@@ -91,40 +94,10 @@
 
 /* ── Embedded Editor ── */
 .journal-note-editor {
-	min-height: var(--journal-cached-height, 3em);
 	position: relative;
-}
-
-/*
- * These classes are added via JS to every workspace element inside our
- * embedded editors. They use the class directly on the element, so
- * specificity is guaranteed. Obsidian's CSS uses position:absolute,
- * inset:0, flex:1 1 0 — all of which collapse to zero height inside
- * our flow-layout scroll container.
- */
-.journal-flow-layout {
-	position: relative !important;
-	top: unset !important;
-	left: unset !important;
-	right: unset !important;
-	bottom: unset !important;
-	inset: unset !important;
-	height: auto !important;
-	max-height: none !important;
-	min-height: 0 !important;
-	width: 100% !important;
-	display: block !important;
-	flex: none !important;
-	overflow: visible !important;
-}
-
-.journal-flow-scroller {
-	overflow: visible !important;
-	height: auto !important;
-}
-
-.journal-note-editor .cm-content {
-	min-height: 1em;
+	height: 400px;
+	overflow: hidden;
+	border-radius: var(--radius-s);
 }
 
 /* Remove tab-bar-like chrome from the embedded leaf */
