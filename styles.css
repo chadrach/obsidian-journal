@@ -1,6 +1,8 @@
 /*
- * Daily Journal Plugin Styles — Diagnostic build
- * Testing Page Preview HoverPopover embedding
+ * Daily Journal Plugin Styles
+ *
+ * Uses Page Preview's native HoverPopover, reparented inline.
+ * Each daily note gets an editable popover embedded in a scroll list.
  */
 
 /* ── Layout ── */
@@ -58,36 +60,67 @@
 	color: var(--text-accent);
 }
 
+.journal-note-open-btn {
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+	padding: var(--size-4-1) var(--size-4-2);
+	border-radius: var(--radius-s);
+	opacity: 0;
+	transition: opacity 100ms ease;
+}
+
+.journal-note-header:hover .journal-note-open-btn {
+	opacity: 1;
+}
+
+.journal-note-open-btn:hover {
+	color: var(--text-accent);
+	background: var(--background-modifier-hover);
+}
+
+/* ── Header hiding ── */
+.journal-note-header-hidden {
+	display: none;
+}
+
 /* ── Editor area ── */
 .journal-note-editor {
 	position: relative;
-	min-height: 3em;
+	min-height: 2em;
 }
 
-/* When a popover is reparented into our container, override its
-   floating/absolute positioning to flow inline. */
-.journal-has-popover .popover.hover-popover {
+/* Hide the hover target span */
+.journal-hover-target {
+	display: none;
+}
+
+/*
+ * Override the popover's floating/absolute positioning to flow inline.
+ * Page Preview normally positions these as floating tooltips on document.body.
+ * We reparent them into our scroll container and make them block-level.
+ */
+.journal-note-editor > .popover.hover-popover {
 	position: relative !important;
 	top: unset !important;
 	left: unset !important;
 	right: unset !important;
 	bottom: unset !important;
+	inset: unset !important;
 	transform: none !important;
 	width: 100% !important;
+	max-width: 100% !important;
 	max-height: none !important;
+	height: auto !important;
 	display: block !important;
 	opacity: 1 !important;
 	pointer-events: auto !important;
 	box-shadow: none !important;
-}
-
-.journal-hover-target {
-	display: none;
-}
-
-.journal-no-popover {
-	color: var(--text-muted);
-	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border) !important;
+	border-radius: var(--radius-s) !important;
+	margin: 0 !important;
+	z-index: auto !important;
+	animation: none !important;
+	transition: none !important;
 }
 
 /* ── Sentinel (infinite scroll trigger) ── */
