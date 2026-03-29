@@ -111,6 +111,7 @@
 	max-width: 100% !important;
 	max-height: none !important;
 	height: auto !important;
+	min-height: 2em !important;
 	display: block !important;
 	opacity: 1 !important;
 	pointer-events: auto !important;
@@ -121,6 +122,40 @@
 	z-index: auto !important;
 	animation: none !important;
 	transition: none !important;
+	overflow: visible !important;
+}
+
+/* All children inside the reparented popover should flow naturally
+   instead of using Page Preview's fixed-height scroll layout. */
+.journal-note-editor > .popover.hover-popover * {
+	max-height: none !important;
+}
+
+.journal-note-editor > .popover.hover-popover .markdown-preview-view,
+.journal-note-editor > .popover.hover-popover .markdown-source-view,
+.journal-note-editor > .popover.hover-popover .markdown-reading-view {
+	height: auto !important;
+	max-height: none !important;
+	overflow: visible !important;
+	position: relative !important;
+}
+
+.journal-note-editor > .popover.hover-popover .cm-editor {
+	height: auto !important;
+	max-height: none !important;
+}
+
+.journal-note-editor > .popover.hover-popover .cm-scroller {
+	overflow: visible !important;
+	max-height: none !important;
+}
+
+/* The popover's internal content wrapper */
+.journal-note-editor > .popover.hover-popover .markdown-embed,
+.journal-note-editor > .popover.hover-popover .markdown-embed-content {
+	height: auto !important;
+	max-height: none !important;
+	overflow: visible !important;
 }
 
 /* ── Sentinel (infinite scroll trigger) ── */

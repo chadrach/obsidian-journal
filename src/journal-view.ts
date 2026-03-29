@@ -72,6 +72,13 @@ async function createInlinePopover(
 
 	const popoverAny = popover as unknown as Record<string, unknown>;
 
+	// Helper: move hoverEl into our container
+	const reparent = () => {
+		if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
+			containerEl.appendChild(popover.hoverEl);
+		}
+	};
+
 	// Save the original show method — it loads the file content via onShow/showPreview
 	const originalShow = popoverAny.show as ((...args: unknown[]) => void) | undefined;
 
@@ -82,29 +89,36 @@ async function createInlinePopover(
 			originalShow.apply(popover, args);
 		}
 		// Reparent from document.body into our container
-		if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
-			containerEl.appendChild(popover.hoverEl);
-		}
+		reparent();
 	};
 
-	// Prevent auto-dismiss
+	// Prevent auto-dismiss and floating behavior
 	popoverAny.hide = () => {};
 	popoverAny.onMouseOut = () => {};
 	popoverAny.shouldShowSelf = () => true;
 	popoverAny.shouldShow = () => true;
-
-	// Override position() — we don't want floating repositioning
 	popoverAny.position = () => {};
+	popoverAny.transition = () => {};
+	popoverAny.watchResize = () => {};
+	popoverAny.detect = () => {};
+
+	// Watch for Obsidian moving the hoverEl back to document.body
+	// (e.g., during resize events or state transitions)
+	const observer = new MutationObserver(() => {
+		if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
+			reparent();
+		}
+	});
+	observer.observe(document.body, { childList: true });
 
 	// Now wait for show() to actually fire (triggered by internal timer)
 	// and for the content to fully render
 	await new Promise<void>((resolve) => {
 		setTimeout(() => {
 			requestAnimationFrame(() => {
-				// Final safety: ensure hoverEl is in our container
-				if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
-					containerEl.appendChild(popover.hoverEl);
-				}
+				reparent();
+				// Stop watching once settled
+				observer.disconnect();
 				resolve();
 			});
 		}, 600);
