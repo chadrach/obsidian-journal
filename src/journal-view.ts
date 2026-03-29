@@ -31,15 +31,12 @@ async function createInlinePopover(
 	file: TFile,
 	containerEl: HTMLElement,
 ): Promise<HoverPopover | null> {
-	// Create a target element that Page Preview latches onto
 	const targetEl = containerEl.createEl("span", { cls: "journal-hover-target" });
 
-	// HoverParent interface — Page Preview assigns the popover here
 	const hoverParent = {
 		hoverPopover: null as HoverPopover | null,
 	};
 
-	// Trigger the hover-link event — Page Preview creates the popover
 	const linktext = file.path.replace(/\.md$/, "");
 	plugin.app.workspace.trigger("hover-link", {
 		event: new MouseEvent("mouseover", { clientX: 0, clientY: 0 }),
@@ -50,9 +47,24 @@ async function createInlinePopover(
 		sourcePath: "",
 	});
 
-	// The popover is assigned to hoverParent synchronously during the event.
-	// Intercept it NOW, before the timer fires show().
-	const popover = hoverParent.hoverPopover;
+	// Poll rapidly to catch the popover before its show() timer fires.
+	// Page Preview creates the popover async within onLinkHover, then
+	// show() runs after a ~300ms timer. We need to intercept in between.
+	const popover = await new Promise<HoverPopover | null>((resolve) => {
+		let elapsed = 0;
+		const interval = setInterval(() => {
+			elapsed += 10;
+			const p = hoverParent.hoverPopover;
+			if (p) {
+				clearInterval(interval);
+				resolve(p);
+			} else if (elapsed >= 5000) {
+				clearInterval(interval);
+				resolve(null);
+			}
+		}, 10);
+	});
+
 	if (!popover || !popover.hoverEl) {
 		targetEl.remove();
 		return null;
@@ -60,42 +72,42 @@ async function createInlinePopover(
 
 	const popoverAny = popover as unknown as Record<string, unknown>;
 
-	// Save the original show method — it loads the file content
-	const originalShow = popoverAny.show as (() => void) | undefined;
+	// Save the original show method — it loads the file content via onShow/showPreview
+	const originalShow = popoverAny.show as ((...args: unknown[]) => void) | undefined;
 
-	// Override show() to embed inline instead of floating on document.body
-	popoverAny.show = function () {
-		// Call the original show to trigger content loading (showPreview, etc.)
+	// Override show() to redirect the hoverEl into our container
+	popoverAny.show = function (...args: unknown[]) {
+		// Call original to trigger content loading
 		if (originalShow) {
-			originalShow.call(popover);
+			originalShow.apply(popover, args);
 		}
-
-		// Immediately reparent into our container (show() appends to document.body)
-		if (popover.hoverEl.parentElement !== containerEl) {
+		// Reparent from document.body into our container
+		if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
 			containerEl.appendChild(popover.hoverEl);
 		}
 	};
 
-	// Prevent auto-dismiss behavior
+	// Prevent auto-dismiss
 	popoverAny.hide = () => {};
 	popoverAny.onMouseOut = () => {};
 	popoverAny.shouldShowSelf = () => true;
+	popoverAny.shouldShow = () => true;
 
-	// Override position() to no-op — we don't want floating positioning
+	// Override position() — we don't want floating repositioning
 	popoverAny.position = () => {};
 
-	// Wait for the show timer to fire and content to render
+	// Now wait for show() to actually fire (triggered by internal timer)
+	// and for the content to fully render
 	await new Promise<void>((resolve) => {
-		// Page Preview's default waitTime is ~300ms, give it plenty of time
 		setTimeout(() => {
 			requestAnimationFrame(() => {
-				// Ensure it's in our container after all async work
-				if (popover.hoverEl.parentElement !== containerEl) {
+				// Final safety: ensure hoverEl is in our container
+				if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
 					containerEl.appendChild(popover.hoverEl);
 				}
 				resolve();
 			});
-		}, 500);
+		}, 600);
 	});
 
 	return popover;
