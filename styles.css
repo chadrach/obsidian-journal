@@ -94,6 +94,11 @@
 	display: none;
 }
 
+/* Hide popover while it's being intercepted (before reparenting) */
+.journal-popover-hidden {
+	display: none !important;
+}
+
 /*
  * Override the popover's floating/absolute positioning to flow inline.
  * Page Preview normally positions these as floating tooltips on document.body.

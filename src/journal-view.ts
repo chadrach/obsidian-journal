@@ -72,10 +72,18 @@ async function createInlinePopover(
 
 	const popoverAny = popover as unknown as Record<string, unknown>;
 
-	// Helper: move hoverEl into our container
+	// Immediately hide the hoverEl so it doesn't flash as a floating box.
+	// We'll show it after reparenting into our container.
+	popover.hoverEl.addClass("journal-popover-hidden");
+
+	// Helper: move hoverEl into our container and clear inline sizing
 	const reparent = () => {
 		if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
 			containerEl.appendChild(popover.hoverEl);
+			// Clear inline width/height/top/left set by Obsidian's positioning
+			popover.hoverEl.removeAttribute("style");
+			// Reveal after reparenting
+			popover.hoverEl.removeClass("journal-popover-hidden");
 		}
 	};
 
@@ -103,7 +111,6 @@ async function createInlinePopover(
 	popoverAny.detect = () => {};
 
 	// Watch for Obsidian moving the hoverEl back to document.body
-	// (e.g., during resize events or state transitions)
 	const observer = new MutationObserver(() => {
 		if (popover.hoverEl && popover.hoverEl.parentElement !== containerEl) {
 			reparent();
@@ -111,17 +118,16 @@ async function createInlinePopover(
 	});
 	observer.observe(document.body, { childList: true });
 
-	// Now wait for show() to actually fire (triggered by internal timer)
-	// and for the content to fully render
+	// Wait for show() to fire and content to render, then finalize.
+	// Page Preview's default wait is ~300ms, so 400ms should be enough.
 	await new Promise<void>((resolve) => {
 		setTimeout(() => {
 			requestAnimationFrame(() => {
 				reparent();
-				// Stop watching once settled
 				observer.disconnect();
 				resolve();
 			});
-		}, 600);
+		}, 400);
 	});
 
 	return popover;
